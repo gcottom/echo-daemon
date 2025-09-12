@@ -1,0 +1,12 @@
+services:
+  echo-daemon-server:
+    build:
+      context: ./
+      dockerfile: Dockerfile
+    ports:
+      - "50999:50999"
+    volumes: 
+      - ./data:/app/data
+      - ./temp:/app/temp
+      - ./settings.yaml:/app/config/config.yaml
+      - "/Users/gagecottom/Music/Music/Media.localized/Music:/app/music:ro"

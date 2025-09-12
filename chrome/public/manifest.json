@@ -1,0 +1,28 @@
+{
+  "name": "EchoDaemon",
+  "description": "Youtube Music Request Interceptor",
+  "version": "1.0.0",
+  "manifest_version": 3,
+  "minimum_chrome_version": "101",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "declarativeNetRequestWithHostAccess",
+    "webNavigation",
+    "webRequest",
+    "cookies"
+  ],
+  "host_permissions": ["*://music.youtube.com/*", "*://*.googlevideo.com/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "web_accessible_resources": [
+    {
+      "matches": ["*://*.youtube.com/*"],
+      "resources": ["128.png"]
+    }
+  ],
+  "icons": {
+    "128": "128.png"
+  }
+}
