@@ -1,6 +1,6 @@
 module github.com/VoidObscura/echodaemon
 
-go 1.24.0
+go 1.22
 
 require (
 	github.com/VoidObscura/umpparser v0.0.0-20250324014803-5311e7c4bf67
@@ -44,7 +44,7 @@ require (
 	github.com/pelletier/go-toml/v2 v2.2.3 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/rogpeppe/go-internal v1.13.1 // indirect
-	github.com/stretchr/testify v1.10.0 // indirect
+	github.com/stretchr/testify v1.11.1 // indirect
 	github.com/sunfish-shogi/bufseekio v0.1.0 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.2.12 // indirect

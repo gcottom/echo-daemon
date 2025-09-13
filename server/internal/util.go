@@ -17,7 +17,18 @@ import (
 )
 
 func ConvertFile(ctx context.Context, b []byte) ([]byte, error) {
-	var args = []string{"-i", "pipe:0", "-c:a", "libmp3lame", "-b:a", "256k", "-f", "mp3", "-"}
+	// Fix potential MP4/MOV atom/timestamp issues at joins, then transcode to MP3 and write to stdout.
+	var args = []string{
+		"-hide_banner", "-loglevel", "error",
+		"-fflags", "+genpts", // regenerate missing/unstable pts across joined segments
+		"-i", "pipe:0", // read input from stdin
+		"-vn", "-sn", // drop video/subtitles
+		"-avoid_negative_ts", "make_zero", // normalize timestamps at splice points
+		"-map", "0:a:0?", // select first audio stream if present
+		"-af", "aresample=async=1000:first_pts=0", // smooth small discontinuities and reset first pts
+		"-c:a", "libmp3lame", "-b:a", "256k",
+		"-f", "mp3", "-", // output MP3 to stdout (pipe)
+	}
 	cmd := exec.Command("ffmpeg", args...)
 	resultBuffer := bytes.NewBuffer(make([]byte, 0)) // pre allocate 5MiB buffer
 
