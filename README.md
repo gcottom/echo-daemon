@@ -3,6 +3,8 @@
 A new take on the classic YouTube downloader that relies on intercepting requests in Chrome made to YouTube Music.
 Where most YouTube downloaders need an update almost weekly to patch the signature forging logic, Echo Daemon excels at being consistently able to download tracks without requiring constant updates. 
 
+
+## Features
 - Downloads High Quality Audio From YouTube Music
 - Parses YouTube UMP format responses to produce a WEBM audio file
 - Converts WEBM audio to MP3 using FFMPEG
@@ -11,9 +13,9 @@ Where most YouTube downloaders need an update almost weekly to patch the signatu
 - Enriches downloaded MP3 file with metadata and saves to the filesystem.
 
 
-## How to use:
-- Download Project Source and Unzip
-- Retrieve a developer API key (clientID, secret) from Spotify and add it to the settings.yaml
+## How to use
+- Clone this repo using ```git clone https://github.com/gcottom/echo-daemon.git``` then ```cd echo-daemon```
+- Retrieve a developer API key (clientID, clientSecret) from Spotify and add it to the settings.yaml
 - Install nodejs if not already installed.
 - Build the Chrome extension by first navigating to the chrome folder in a terminal and installing webpack by running ``` npm install webpack ``` and then running ``` npm run build ```  
 - Install the Chrome extension by activating developer mode in Chrome, then go to the Extensions menu, select "Load Unpacked", navigate to the chrome folder of this project and open the dist folder at chrome/dist then use the "select" button in the dialog to load the extension.
