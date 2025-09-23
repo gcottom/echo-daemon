@@ -153,7 +153,6 @@ chrome.webRequest.onBeforeRequest.addListener(
             requests[details.requestId] = entry;
             maybeSend(details.requestId);
         });
-        requests[details.requestId] = entry;
     },
     { urls: ["*://*.googlevideo.com/*"] },
     ["requestBody"]
