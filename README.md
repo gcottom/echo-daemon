@@ -3,6 +3,7 @@
 A new take on the classic YouTube downloader that relies on intercepting requests in Chrome made to YouTube Music.
 Where most YouTube downloaders need an update almost weekly to patch the signature forging logic, Echo Daemon excels at being consistently able to download tracks without requiring constant updates. 
 
+⚠️ This project is a proof of concept and for educational/research purposes only.  
 
 ## Features
 - Downloads High Quality Audio From YouTube Music
