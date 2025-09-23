@@ -1,7 +1,7 @@
 #!/bin/bash
 export LANG="en_US.UTF-8"
 export LC_ALL="en_US.UTF-8"
-
+/Volumes/990pro/projects/echo-daemon/cleanup.sh
 brew install rsync
 # Define directories
 DIR_A="/Volumes/990pro/projects/echo-daemon/data"
