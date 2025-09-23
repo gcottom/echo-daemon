@@ -28,7 +28,7 @@ type CaptureRequest struct {
 type CurrentCapture struct {
 	ID       string           `json:"id"`
 	Requests []CaptureRequest `json:"requests"`
-	Data     [][]byte         `json:"data"`
+	Data     []byte           `json:"data"`
 }
 
 type CaptureChanData struct {

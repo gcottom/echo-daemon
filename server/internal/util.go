@@ -5,63 +5,45 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
 
-	"github.com/VoidObscura/echodaemon/config"
 	"github.com/VoidObscura/echodaemon/logger"
-	"github.com/VoidObscura/umpparser"
 )
 
 func ConvertFile(ctx context.Context, b []byte) ([]byte, error) {
-	// Fix potential MP4/MOV atom/timestamp issues at joins, then transcode to MP3 and write to stdout.
+	// Decode and transcode while regenerating linear audio timestamps to avoid gaps at joins.
 	var args = []string{
 		"-hide_banner", "-loglevel", "error",
-		"-fflags", "+genpts", // regenerate missing/unstable pts across joined segments
+		"-fflags", "+genpts+igndts", // ignore/don't trust DTS, generate PTS
 		"-i", "pipe:0", // read input from stdin
 		"-vn", "-sn", // drop video/subtitles
 		"-avoid_negative_ts", "make_zero", // normalize timestamps at splice points
 		"-map", "0:a:0?", // select first audio stream if present
-		"-af", "aresample=async=1000:first_pts=0", // smooth small discontinuities and reset first pts
+		"-af", "aresample=async=1:first_pts=0", // linearize PTS by sample index; minor resync only
 		"-c:a", "libmp3lame", "-b:a", "256k",
 		"-f", "mp3", "-", // output MP3 to stdout (pipe)
 	}
-	cmd := exec.Command("ffmpeg", args...)
-	resultBuffer := bytes.NewBuffer(make([]byte, 0)) // pre allocate 5MiB buffer
+	// Use CommandContext so cancellation/timeouts propagate to ffmpeg
+	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
 
-	cmd.Stdout = resultBuffer // stdout result will be written here
+	// Pipe input via an in-memory reader to avoid manual StdinPipe writes (prevents EPIPE on early-exit)
+	cmd.Stdin = bytes.NewReader(b)
 
-	stdin, err := cmd.StdinPipe() // Open stdin pipe
-	if err != nil {
-		logger.ErrorC(ctx, "conversion error", slog.Any("error", err))
-		return nil, err
-	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
 
-	err = cmd.Start() // Start a process on another goroutine
-	if err != nil {
-		logger.ErrorC(ctx, "conversion error", slog.Any("error", err))
-		return nil, err
+	if err := cmd.Run(); err != nil {
+		// Include stderr to help diagnose codec/container issues instead of surfacing generic EPIPE
+		errWrap := fmt.Errorf("ffmpeg failed: %w; stderr: %s", err, stderr.String())
+		logger.ErrorC(ctx, "conversion error", slog.Any("error", errWrap))
+		return nil, errWrap
 	}
-
-	_, err = stdin.Write(b) // pump audio data to stdin pipe
-	if err != nil {
-		logger.ErrorC(ctx, "conversion error", slog.Any("error", err))
-		return nil, err
-	}
-	err = stdin.Close() // close the stdin, or ffmpeg will wait forever
-	if err != nil {
-		logger.ErrorC(ctx, "conversion error", slog.Any("error", err))
-		return nil, err
-	}
-	err = cmd.Wait() // wait until ffmpeg finish
-	if err != nil {
-		logger.ErrorC(ctx, "conversion error", slog.Any("error", err))
-		return nil, err
-	}
-	return resultBuffer.Bytes(), nil
+	return stdout.Bytes(), nil
 }
 
 func OSExecuteFindJSONStart(ctx context.Context, command string, args ...string) ([]byte, error) {
@@ -75,56 +57,6 @@ func OSExecuteFindJSONStart(ctx context.Context, command string, args ...string)
 	}
 	i := bytes.LastIndex(out.Bytes(), []byte("{"))
 	return out.Bytes()[i:], nil
-}
-
-func ParseUMPs(chunks [][]byte) ([]byte, error) {
-	data, err := umpparser.ParseUMPChunks(chunks)
-	if err != nil {
-		return nil, err
-	}
-	return data.Media, nil
-}
-
-// CreateConcatFile generates a text file listing all audio segments
-func CreateConcatFile(files []string, id string) (string, error) {
-	concatFile := fmt.Sprintf("%s/concat_list_%s.txt", config.AppConfig.TempDir, id)
-	f, err := os.Create(concatFile)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-
-	for _, file := range files {
-		_, err := f.WriteString(fmt.Sprintf("file '%s'\n", file))
-		if err != nil {
-			return "", err
-		}
-	}
-
-	return concatFile, nil
-}
-
-// MergeAudioFiles uses FFmpeg to join segments and return MP3 as []byte
-func MergeAudioFiles(concatFile string) ([]byte, error) {
-	cmd := exec.Command("ffmpeg",
-		"-f", "concat", "-safe", "0", "-i", concatFile, // Read list of files
-		"-c", "copy", // No transcoding
-		"-f", "mp3", // Output format MP3
-		"pipe:1", // Send output to stdout
-	)
-
-	var outputBuffer bytes.Buffer
-	cmd.Stdout = &outputBuffer // Capture stdout
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr // Capture stderr for debugging
-
-	// Run FFmpeg process
-	err := cmd.Run()
-	if err != nil {
-		return nil, fmt.Errorf("ffmpeg failed: %v, stderr: %s", err, stderr.String())
-	}
-
-	return outputBuffer.Bytes(), nil
 }
 
 func SanitizePath(path string) string {

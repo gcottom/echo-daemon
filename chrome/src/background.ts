@@ -20,6 +20,17 @@ console.log(starter);
 
 letsStart();
 
+// Helper: should skip forwarding this URL?
+function shouldSkipForward(url: string): boolean {
+    try {
+        const u = new URL(url);
+        const itag = u.searchParams.get("itag");
+        return itag === "243";
+    } catch {
+        return false;
+    }
+}
+
 function letsStart() {
     if (wakeup === undefined) {
         isFirstStart = true;
@@ -67,55 +78,82 @@ interface RequestData {
     cookies: string;
     body: string;
 }
+// Track in-flight requests; send only when we have URL/method + headers + cookies/body
 const requests: Record<string, Partial<RequestData>> = {};
+
+function maybeSend(requestId: string) {
+    const r = requests[requestId];
+    if (!r) return;
+    if (!r.url || !r.method || !r.headers || r.cookies === undefined || r.body === undefined) {
+        return; // wait for missing parts
+    }
+    // Skip forwarding when itag=243 is present
+    if (shouldSkipForward(r.url!)) {
+        if (DEBUG) console.log("Skipping forward for itag=243:", r.url);
+        delete requests[requestId];
+        return;
+    }
+    const requestData: RequestData = {
+        url: r.url!,
+        method: r.method!,
+        headers: r.headers!,
+        cookies: r.cookies as string,
+        body: r.body as string,
+    };
+    fetch(`http://localhost:${goPort}/capture?`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestData)
+    }).catch(err => console.error("Failed to send request data:", err));
+    delete requests[requestId];
+}
 
 // Intercept requests for playback chunk headers
 chrome.webRequest.onBeforeSendHeaders.addListener(
     (details: chrome.webRequest.WebRequestHeadersDetails) => {
         if (!details.url.includes("googlevideo.com")) return;
-        requests[details.requestId] = {
-            url: details.url,
-            method: details.method ?? "GET",
-            headers: details.requestHeaders?.reduce((acc, header) => {
-                if (header.name && header.value) acc[header.name] = header.value;
-                return acc;
-            }, {} as Record<string, string>) ?? {}
-        };
+        // Reduce work early if we know we'll skip
+        if (shouldSkipForward(details.url)) return;
+        const entry = requests[details.requestId] || {};
+        entry.url = details.url;
+        entry.method = details.method ?? entry.method ?? "GET";
+        entry.headers = details.requestHeaders?.reduce((acc, header) => {
+            if (header.name && header.value) acc[header.name] = header.value;
+            return acc;
+        }, {} as Record<string, string>) ?? entry.headers ?? {};
+        requests[details.requestId] = entry;
+        maybeSend(details.requestId);
     },
     { urls: ["*://*.googlevideo.com/*"] },
     ["requestHeaders"]
 );
 
-// Intercept requests for playback chunk body and cookies.
-// Join the headers, cookies, and body into a single object and send it to the Go server.
+// Intercept requests for playback chunk body and cookies and join
 chrome.webRequest.onBeforeRequest.addListener(
     (details: chrome.webRequest.WebRequestBodyDetails) => {
         if (!details.url.includes("googlevideo.com")) return;
-        chrome.cookies.getAll({ url: details.url }, (cookies) => {
-            let body = "";
-            if (details.requestBody && details.requestBody.raw) {
-                try {
-                    const decoder = new TextDecoder("utf-8");
-                    body = decoder.decode(details.requestBody.raw[0].bytes);
-                } catch (err) {
-                    console.error("Failed to decode request body:", err);
-                }
+        // Reduce work early if we know we'll skip
+        if (shouldSkipForward(details.url)) return;
+        const entry = requests[details.requestId] || {};
+        entry.url = details.url;
+        entry.method = details.method ?? entry.method ?? "GET";
+        let body = "";
+        if (details.requestBody && details.requestBody.raw && details.requestBody.raw[0]?.bytes) {
+            try {
+                const decoder = new TextDecoder("utf-8");
+                body = decoder.decode(details.requestBody.raw[0].bytes);
+            } catch (err) {
+                console.error("Failed to decode request body:", err);
             }
-            const storedData = requests[details.requestId] || {};
-            const requestData: RequestData = {
-                url: details.url,
-                method: storedData.method ?? "GET",
-                headers: storedData.headers ?? {},
-                cookies: cookies.map(cookie => `${cookie.name}=${cookie.value}`).join("; "),
-                body: body
-            };
-            fetch(`http://localhost:${goPort}/capture?`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(requestData)
-            }).catch(err => console.error("Failed to send request data:", err));
-            delete requests[details.requestId];
+        }
+        entry.body = body;
+        // capture cookies asynchronously, then attempt send
+        chrome.cookies.getAll({ url: details.url }, (cookies) => {
+            entry.cookies = cookies.map(cookie => `${cookie.name}=${cookie.value}`).join("; ");
+            requests[details.requestId] = entry;
+            maybeSend(details.requestId);
         });
+        requests[details.requestId] = entry;
     },
     { urls: ["*://*.googlevideo.com/*"] },
     ["requestBody"]
@@ -160,7 +198,7 @@ async function getCookies(url: string): Promise<string> {
 }
 
 async function updateJobs() {
-    if (isAlreadyAwake == false) {
+    if (!isAlreadyAwake) {
         letsStart();
     }
 }

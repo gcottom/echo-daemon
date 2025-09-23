@@ -3,7 +3,6 @@ package downloader
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -13,17 +12,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/VoidObscura/echodaemon/config"
-	"github.com/VoidObscura/echodaemon/internal"
-	"github.com/VoidObscura/echodaemon/logger"
-	"github.com/gcottom/audiometa/v3"
-	"github.com/gcottom/retry"
-
-	"io/fs"
 	"path/filepath"
 	"regexp"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/VoidObscura/echodaemon/config"
+	"github.com/VoidObscura/echodaemon/internal"
+	"github.com/VoidObscura/echodaemon/internal/ump_parser"
+	"github.com/VoidObscura/echodaemon/logger"
+	"github.com/gcottom/audiometa/v3"
 
 	"golang.org/x/text/unicode/norm"
 )
@@ -79,6 +77,7 @@ func (s *Service) SaveFile(ctx context.Context, id string, data []byte) error {
 	logger.InfoC(ctx, "File saved successfully", slog.String("path", savePath), slog.String("id", id))
 	return nil
 }
+
 func SanitizeFilename(name string) string {
 	if name == "" || name == "." || name == ".." {
 		return "_"
@@ -159,7 +158,7 @@ func SanitizeFilename(name string) string {
 	if fn == "" {
 		fn = "_"
 	}
-	reg := regexp.MustCompile(`[^a-zA-Z0-9_.\-\(\)&]`)
+	reg := regexp.MustCompile(`[^a-zA-Z0-9_.\-()&]`)
 	fn = reg.ReplaceAllString(fn, "_") // replace any remaining illegal chars with underscore
 	return fn
 }
@@ -182,68 +181,22 @@ func truncateBytes(s string, n int) string {
 	return buf.String()
 }
 
-// SanitizeTree walks a directory (non-recursive or recursive; here recursive)
-// and renames files/dirs in-place to sanitized names. It skips collisions.
-func SanitizeTree(root string) error {
-	// Walk from deepest paths first so we rename children before parents.
-	type item struct{ oldPath, newPath string }
-	var items []item
-
-	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if p == root {
-			return nil
-		}
-		dir := filepath.Dir(p)
-		sanitized := SanitizeFilename(d.Name())
-		if sanitized == d.Name() {
-			return nil
-		}
-		items = append(items, item{
-			oldPath: p,
-			newPath: filepath.Join(dir, sanitized),
-		})
-		return nil
-	})
-	if err != nil {
-		return err
-	}
-
-	// Rename children before parents: sort by path depth descending.
-	// (Simple stable sort by length works for most cases.)
-	for i := len(items) - 1; i >= 0; i-- {
-		it := items[i]
-		if _, err := os.Stat(it.newPath); err == nil {
-			// Collision: append a short suffix.
-			base := it.newPath
-			ext := filepath.Ext(base)
-			stem := strings.TrimSuffix(base, ext)
-			it.newPath = fmt.Sprintf("%s_%d%s", stem, i, ext)
-		}
-		if err := os.Rename(it.oldPath, it.newPath); err != nil {
-			return fmt.Errorf("rename %q -> %q: %w", it.oldPath, it.newPath, err)
-		}
-	}
-	return nil
-}
 func (s *Service) Cleanup(ctx context.Context, id string) {
-	_ = os.Remove(fmt.Sprintf("%s/%s", config.AppConfig.TempDir, id))
+	_ = os.Remove(fmt.Sprintf("%s/%s.%s", config.AppConfig.TempDir, id, internal.FILEFORMAT))
 	_ = os.Remove(fmt.Sprintf("%s/%s.%s", config.AppConfig.TempDir, id, internal.FILEFORMAT))
 }
 
 func (s *Service) NewCapture(ctx context.Context, id string) {
-	cap := CaptureChanData{
+	msg := CaptureChanData{
 		TrackID: id,
 		IsStart: true,
 	}
-	s.CaptureChannel <- cap
+	s.CaptureChannel <- msg
 }
 
-func (s *Service) ContinueCapture(ctx context.Context, cap CaptureRequest) {
+func (s *Service) ContinueCapture(ctx context.Context, req CaptureRequest) {
 	capData := CaptureChanData{
-		CaptureRequest: &cap,
+		CaptureRequest: &req,
 	}
 	s.CaptureChannel <- capData
 }
@@ -258,7 +211,7 @@ func (s *Service) CaptureProcessor(ctx context.Context) {
 				logger.InfoC(ctx, "new capture started")
 				id = req.TrackID
 				logger.InfoC(ctx, "Capture track id", slog.String("id", id))
-				s.CurrentCapture = &CurrentCapture{ID: id, Data: make([][]byte, 0)}
+				s.CurrentCapture = &CurrentCapture{ID: id, Data: make([]byte, 0)}
 				replaySuccess = false
 			} else {
 				s.CurrentCapture.Requests = append(s.CurrentCapture.Requests, *req.CaptureRequest)
@@ -269,29 +222,16 @@ func (s *Service) CaptureProcessor(ctx context.Context) {
 						continue
 					}
 					replaySuccess = true
-					s.CurrentCapture.Data = append(s.CurrentCapture.Data, bod)
+					// Only use the single replayed buffer, no overlap merging
+					s.CurrentCapture.Data = bod
 					logger.InfoC(ctx, "Captured data length", slog.Int("length", len(bod)))
-					go func(id string, data [][]byte) {
-						if id == "" {
-							return
-						}
-						ctx := context.Background()
-						if err := os.Mkdir(config.AppConfig.TempDir, 0755); err != nil && !os.IsExist(err) {
-							logger.ErrorC(ctx, "failed to create temp dir", slog.Any("error", err))
-							return
-						}
-						logger.InfoC(ctx, "processing captured audio")
-						dat, err := internal.ParseUMPs(data)
-						if err != nil {
-							logger.ErrorC(ctx, "error parsing UMP data", slog.Any("error", err))
-							return
-						}
-						joinedData, err := internal.ConvertFile(ctx, dat)
+
+					go func(id string, data []byte) {
+						joinedData, err := internal.ConvertFile(ctx, data)
 						if err != nil {
 							logger.ErrorC(ctx, "error joining data for captured audio", slog.Any("error", err))
 							return
 						}
-
 						savePath := fmt.Sprintf("%s/%s.%s", config.AppConfig.TempDir, id, internal.FILEFORMAT)
 						if err = os.WriteFile(savePath, joinedData, 0644); err != nil {
 							logger.ErrorC(ctx, "failed to write file", slog.String("id", id), slog.Any("error", err))
@@ -316,50 +256,46 @@ func (s *Service) CaptureProcessor(ctx context.Context) {
 }
 
 func ReplayCapture(ctx context.Context, capReq CaptureRequest) ([]byte, error) {
-	logger.InfoC(ctx, "replaying capture")
-	req, err := http.NewRequest(capReq.Method, capReq.URL, strings.NewReader(capReq.Body))
-	if err != nil {
-		return nil, err
-	}
-	u, err := url.Parse(capReq.URL)
-	if err != nil {
-		panic(err)
-	}
+	logger.InfoC(ctx, "replaying capture request", slog.String("url", capReq.URL))
+	if u, err := url.Parse(capReq.URL); err == nil && u.Scheme != "" && u.Host != "" {
+		if strings.Contains(u.Host, "googlevideo.com") {
+			q := u.Query()
+			// Many sabr/ump links include transient range params for partial fetches; remove to fetch full object
+			q.Del("range")
+			q.Del("rn")
+			q.Del("rbuf")
+			u.RawQuery = q.Encode()
 
-	// Get and edit query parameters
-	q := u.Query()
-	q.Set("range", "0-"+q.Get("clen")) // set or replace param
+			logger.InfoC(ctx, fmt.Sprintf("Downloading UMP-encoded data from: %s", u.String()))
+			out, err := DownloadWithHeaders(u.String(), map[string]string{
+				"Accept":     "application/vnd.yt-ump",
+				"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome Safari",
+			})
+			if err != nil {
+				logger.ErrorC(ctx, "failed to download UMP data", slog.Any("error", err))
+				return nil, err
+			}
 
-	// Re-encode query params
-	u.RawQuery = q.Encode()
-
-	for key, value := range capReq.Headers {
-		req.Header.Set(key, value)
-	}
-	if capReq.Cookies != "" {
-		req.Header.Set("Cookie", capReq.Cookies) // Send cookies properly formatted
-	}
-	req.URL = u
-	res, err := retry.Retry(retry.NewAlgExpDefault(), 3, func() (*http.Response, error) {
-		res, err := http.DefaultClient.Do(req)
-		if err != nil {
-			return nil, err
+			logger.InfoC(ctx, "Decoding UMP data")
+			return ump_parser.DecodeUMPFile(out)
 		}
-		if res.StatusCode > 299 {
-			_ = res.Body.Close()
-			return nil, errors.New("replay capture returned code: " + res.Status)
-		}
-		return res, nil
-	})
+	}
+	logger.ErrorC(ctx, "unsupported URL scheme")
+	return nil, fmt.Errorf("unsupported URL scheme")
+}
+
+func DownloadWithHeaders(rawURL string, headers map[string]string) ([]byte, error) {
+	req, err := http.NewRequest("GET", rawURL, nil)
 	if err != nil {
 		return nil, err
 	}
-	defer res[0].(*http.Response).Body.Close()
-
-	bod, err := io.ReadAll(res[0].(*http.Response).Body)
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
-	return bod, nil
-
+	defer func() { _ = resp.Body.Close() }()
+	return io.ReadAll(resp.Body)
 }
