@@ -268,7 +268,7 @@ func ReplayCapture(ctx context.Context, capReq CaptureRequest) ([]byte, error) {
 			logger.InfoC(ctx, fmt.Sprintf("Downloading UMP-encoded data from: %s", u.String()))
 			out, err := DownloadWithHeaders(u.String(), map[string]string{
 				"Accept":     "application/vnd.yt-ump",
-				"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome Safari",
+				"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
 			})
 			if err != nil {
 				logger.ErrorC(ctx, "failed to download UMP data", slog.Any("error", err))
