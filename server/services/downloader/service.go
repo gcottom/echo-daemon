@@ -17,11 +17,11 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/VoidObscura/echodaemon/config"
-	"github.com/VoidObscura/echodaemon/internal"
-	"github.com/VoidObscura/echodaemon/internal/ump_parser"
-	"github.com/VoidObscura/echodaemon/logger"
 	"github.com/gcottom/audiometa/v3"
+	"github.com/gcottom/echodaemon/config"
+	"github.com/gcottom/echodaemon/internal"
+	"github.com/gcottom/echodaemon/internal/ump_parser"
+	"github.com/gcottom/echodaemon/logger"
 
 	"golang.org/x/text/unicode/norm"
 )
@@ -214,8 +214,12 @@ func (s *Service) CaptureProcessor(ctx context.Context) {
 				s.CurrentCapture = &CurrentCapture{ID: id, Data: make([]byte, 0)}
 				replaySuccess = false
 			} else {
-				s.CurrentCapture.Requests = append(s.CurrentCapture.Requests, *req.CaptureRequest)
-				if !replaySuccess {
+				if !replaySuccess && len(s.CurrentCapture.Requests) < 2 {
+					if id == "" {
+						logger.ErrorC(ctx, "no current capture ID found")
+						continue
+					}
+					s.CurrentCapture.Requests = append(s.CurrentCapture.Requests, *req.CaptureRequest)
 					bod, err := ReplayCapture(ctx, *req.CaptureRequest)
 					if err != nil {
 						logger.ErrorC(ctx, "error replaying request", slog.Any("error", err))

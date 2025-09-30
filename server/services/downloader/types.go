@@ -3,7 +3,7 @@ package downloader
 import (
 	"sync"
 
-	"github.com/VoidObscura/echodaemon/services/meta"
+	"github.com/gcottom/echodaemon/services/meta"
 )
 
 type Service struct {

@@ -12,9 +12,9 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/VoidObscura/echodaemon/internal"
-	"github.com/VoidObscura/echodaemon/logger"
 	"github.com/gcottom/audiometa/v3"
+	"github.com/gcottom/echodaemon/internal"
+	"github.com/gcottom/echodaemon/logger"
 	"github.com/gcottom/retry"
 	"github.com/zmb3/spotify/v2"
 	spotifyauth "github.com/zmb3/spotify/v2/auth"

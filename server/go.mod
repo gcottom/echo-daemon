@@ -1,4 +1,4 @@
-module github.com/VoidObscura/echodaemon
+module github.com/gcottom/echodaemon
 
 go 1.24.0
 
