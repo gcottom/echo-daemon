@@ -312,25 +312,25 @@ func ReplayCapture(ctx context.Context, capReq CaptureRequest, id string) ([]byt
 				return nil, fmt.Errorf("insufficient token life remaining (%s)", remaining)
 			}
 			done := false
-			defer func(done *bool) {
-				*done = true
-			}(&done)
+			defer func() {
+				done = true
+			}()
 			// Update query (after cleaning transient params)
 			u.RawQuery = q.Encode()
-			go func(done *bool) {
+			go func() {
 				startTime := time.Now()
 				for {
-					if *done {
+					if done {
 						return
 					}
 					time.Sleep(5 * time.Second)
-					if *done {
+					if done {
 						return
 					}
 					elapsed := time.Since(startTime).Truncate(time.Second).Seconds()
 					logger.InfoC(ctx, "downloading UMP-encoded data", slog.String("id", id), slog.Float64("time elapsed (seconds)", elapsed), slog.Int("eta (seconds)", estDownloadTimeRemaining-int(elapsed)-5))
 				}
-			}(&done)
+			}()
 			logger.InfoC(ctx, "token life OK", slog.Int64("expire_unix", expireUnix), slog.Time("expiry_time", expiryTime), slog.Int("remaining_seconds", int(remaining.Seconds())))
 			logger.InfoC(ctx, fmt.Sprintf("Downloading UMP-encoded data from: %s", u.String()))
 			out, err := DownloadWithHeaders(u.String(), map[string]string{
