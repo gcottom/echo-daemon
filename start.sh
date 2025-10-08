@@ -27,8 +27,6 @@ DIR_B=$(grep '^local_music_dir:' settings.yaml | cut -d ':' -f2- | xargs)
 echo "DIR_B is $DIR_B"
 LOG="${HOME}/echo-daemon.log"
 INTERVAL=15   # seconds between scans
-#BACKUP_INTERVAL=$((60 * 15))
-#LAST_BACKUP=0
 mkdir -p "$DIR_A"
 
 cleanup(){
@@ -43,9 +41,6 @@ trap cleanup INT TERM
 [ -d "$DIR_B" ] || { log "ERROR: Dest missing:   $DIR_B"; exit 1; }
 
 log "Starting echo-daemon helper script: moving files from $DIR_A -> $DIR_B every ${INTERVAL}s"
-# Build images (exit on failure)
-#docker compose build --no-cache || { log "docker compose build failed"; exit 1; }
-
 # Start compose stack in background; --abort-on-container-exit ensures if any container exits the whole stack stops
 ( docker compose up --abort-on-container-exit ) &
 COMPOSE_PID=$!
@@ -80,13 +75,4 @@ while true; do
             log "Failed to move: $file"
         fi
     done
-
- #   now=$(date +%s)
- #   if (( now - LAST_BACKUP >= BACKUP_INTERVAL )); then
-  #      log "Performing backup..."
-  #      /Volumes/990pro/projects/echo-daemon/sync.sh >> "$LOG" 2>&1
-   #     LAST_BACKUP=$now
-  #  fi
- #   sleep "$INTERVAL"
-
 done
