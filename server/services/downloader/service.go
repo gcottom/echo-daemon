@@ -297,11 +297,11 @@ func ReplayCapture(ctx context.Context, capReq CaptureRequest, id string) ([]byt
 			}
 			estDownloadTimeRemaining := int(totalLengthVal / 2)
 
-			for {
-				if estDownloadTimeRemaining%5 == 0 {
-					break
-				}
-				estDownloadTimeRemaining++
+			// Round up estDownloadTimeRemaining to the next multiple of downloadTimeRoundingInterval.
+			// This ensures the estimated time aligns with expected intervals (e.g., for UI updates or protocol requirements).
+			const downloadTimeRoundingInterval = 5
+			if estDownloadTimeRemaining%downloadTimeRoundingInterval != 0 {
+				estDownloadTimeRemaining += downloadTimeRoundingInterval - (estDownloadTimeRemaining % downloadTimeRoundingInterval)
 			}
 
 			expiryTime := time.Unix(expireUnix, 0)
