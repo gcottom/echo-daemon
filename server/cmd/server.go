@@ -32,6 +32,7 @@ func main() {
 func RunServer() error {
 	ctx := logger.WithLogger(context.Background(), logger.DefaultLogger)
 	logger.InfoC(ctx, "starting downloader server...")
+	logger.InfoC(ctx, "loading config...")
 	cfg, err := config.LoadConfigFromFile("")
 	if err != nil {
 		slog.Error("failed to load config", slog.Any("error", err))

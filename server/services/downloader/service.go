@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -214,15 +215,24 @@ func (s *Service) CaptureProcessor(ctx context.Context) {
 				s.CurrentCapture = &CurrentCapture{ID: id, Data: make([]byte, 0)}
 				replaySuccess = false
 			} else {
-				if !replaySuccess && len(s.CurrentCapture.Requests) < 2 {
+				if !replaySuccess {
 					if id == "" {
 						logger.ErrorC(ctx, "no current capture ID found")
 						continue
 					}
 					s.CurrentCapture.Requests = append(s.CurrentCapture.Requests, *req.CaptureRequest)
-					bod, err := ReplayCapture(ctx, *req.CaptureRequest)
+					if len(s.CurrentCapture.Requests)%2 == 0 {
+						logger.InfoC(ctx, "skipping even numbered request")
+						continue
+					}
+					logger.InfoC(ctx, "attempting to replay request", slog.Int("requestNumber", len(s.CurrentCapture.Requests)))
+					bod, err := ReplayCapture(ctx, *req.CaptureRequest, s.CurrentCapture.ID)
 					if err != nil {
 						logger.ErrorC(ctx, "error replaying request", slog.Any("error", err))
+						continue
+					}
+					if len(bod) < 1_000_000 {
+						logger.InfoC(ctx, "replayed data too small, attempting to retry download with next request", slog.Int("length", len(bod)))
 						continue
 					}
 					replaySuccess = true
@@ -259,7 +269,7 @@ func (s *Service) CaptureProcessor(ctx context.Context) {
 	}
 }
 
-func ReplayCapture(ctx context.Context, capReq CaptureRequest) ([]byte, error) {
+func ReplayCapture(ctx context.Context, capReq CaptureRequest, id string) ([]byte, error) {
 	logger.InfoC(ctx, "replaying capture request", slog.String("url", capReq.URL))
 	if u, err := url.Parse(capReq.URL); err == nil && u.Scheme != "" && u.Host != "" {
 		if strings.Contains(u.Host, "googlevideo.com") {
@@ -268,8 +278,60 @@ func ReplayCapture(ctx context.Context, capReq CaptureRequest) ([]byte, error) {
 			q.Del("range")
 			q.Del("rn")
 			q.Del("rbuf")
-			u.RawQuery = q.Encode()
 
+			expireStr := q.Get("expire")
+			if expireStr == "" {
+				logger.ErrorC(ctx, "missing expire param")
+				return nil, fmt.Errorf("missing expire param")
+			}
+			expireUnix, err := strconv.ParseInt(expireStr, 10, 64)
+			if err != nil {
+				logger.ErrorC(ctx, "failed to parse expire param", slog.Any("error", err), slog.String("expire", expireStr))
+				return nil, fmt.Errorf("invalid expire param: %w", err)
+			}
+			totalLength := q.Get("dur")
+			totalLengthVal, err := strconv.ParseFloat(totalLength, 32)
+			if err != nil {
+				logger.ErrorC(ctx, "failed to parse total length", slog.Any("error", err), slog.String("totalLength", totalLength))
+				return nil, fmt.Errorf("invalid total length: %w", err)
+			}
+			estDownloadTimeRemaining := int(totalLengthVal / 2)
+
+			for {
+				if estDownloadTimeRemaining%5 == 0 {
+					break
+				}
+				estDownloadTimeRemaining++
+			}
+
+			expiryTime := time.Unix(expireUnix, 0)
+			remaining := time.Until(expiryTime)
+			const minLifetime = 30 * time.Second
+			if remaining <= minLifetime {
+				logger.ErrorC(ctx, "insufficient token life remaining", slog.Int64("expire_unix", expireUnix), slog.Time("expiry_time", expiryTime), slog.Duration("remaining", remaining))
+				return nil, fmt.Errorf("insufficient token life remaining (%s)", remaining)
+			}
+			done := false
+			defer func(done *bool) {
+				*done = true
+			}(&done)
+			// Update query (after cleaning transient params)
+			u.RawQuery = q.Encode()
+			go func(done *bool) {
+				startTime := time.Now()
+				for {
+					if *done {
+						return
+					}
+					time.Sleep(5 * time.Second)
+					if *done {
+						return
+					}
+					elapsed := time.Since(startTime).Truncate(time.Second).Seconds()
+					logger.InfoC(ctx, "downloading UMP-encoded data", slog.String("id", id), slog.Float64("time elapsed (seconds)", elapsed), slog.Int("eta (seconds)", estDownloadTimeRemaining-int(elapsed)-5))
+				}
+			}(&done)
+			logger.InfoC(ctx, "token life OK", slog.Int64("expire_unix", expireUnix), slog.Time("expiry_time", expiryTime), slog.Int("remaining_seconds", int(remaining.Seconds())))
 			logger.InfoC(ctx, fmt.Sprintf("Downloading UMP-encoded data from: %s", u.String()))
 			out, err := DownloadWithHeaders(u.String(), map[string]string{
 				"Accept":     "application/vnd.yt-ump",
@@ -279,8 +341,8 @@ func ReplayCapture(ctx context.Context, capReq CaptureRequest) ([]byte, error) {
 				logger.ErrorC(ctx, "failed to download UMP data", slog.Any("error", err))
 				return nil, err
 			}
-
-			logger.InfoC(ctx, "Decoding UMP data")
+			done = true
+			logger.InfoC(ctx, "Decoding UMP data", slog.Int("bytes", len(out)))
 			return ump_parser.DecodeUMPFile(out)
 		}
 	}
