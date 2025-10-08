@@ -36,3 +36,5 @@ type CaptureChanData struct {
 	TrackID        string
 	CaptureRequest *CaptureRequest
 }
+
+const MinimumDownloadSize = 1000000

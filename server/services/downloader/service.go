@@ -231,7 +231,7 @@ func (s *Service) CaptureProcessor(ctx context.Context) {
 						logger.ErrorC(ctx, "error replaying request", slog.Any("error", err))
 						continue
 					}
-					if len(bod) < 1_000_000 {
+					if len(bod) < MinimumDownloadSize {
 						logger.InfoC(ctx, "replayed data too small, attempting to retry download with next request", slog.Int("length", len(bod)))
 						continue
 					}
