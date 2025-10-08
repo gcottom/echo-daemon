@@ -10,7 +10,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/VoidObscura/echodaemon/logger"
+	"github.com/gcottom/echodaemon/logger"
 )
 
 func ConvertFile(ctx context.Context, b []byte) ([]byte, error) {

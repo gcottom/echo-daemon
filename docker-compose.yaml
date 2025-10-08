@@ -9,4 +9,4 @@ services:
       - ./data:/app/data
       - ./temp:/app/temp
       - ./settings.yaml:/app/config/config.yaml
-      - "/Users/gagecottom/Music/Music/Media.localized/Music:/app/music:ro"
+      - "${MUSIC_ROOT}:/app/music:ro"

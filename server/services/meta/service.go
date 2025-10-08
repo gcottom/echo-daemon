@@ -12,9 +12,9 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/VoidObscura/echodaemon/internal"
-	"github.com/VoidObscura/echodaemon/logger"
 	"github.com/gcottom/audiometa/v3"
+	"github.com/gcottom/echodaemon/internal"
+	"github.com/gcottom/echodaemon/logger"
 	"github.com/gcottom/retry"
 	"github.com/zmb3/spotify/v2"
 	spotifyauth "github.com/zmb3/spotify/v2/auth"
@@ -86,12 +86,16 @@ func (s *Service) GetBestMeta(ctx context.Context, id string) (*TrackMeta, error
 		return nil, err
 	}
 	trackMeta := res[0].(TrackMeta)
+	trackMeta.ID = id
 	res, err = retry.Retry(retry.NewAlgSimpleDefault(), 3, s.GetSpotifyMeta, ctx, trackMeta)
 	if err != nil {
 		logger.ErrorC(ctx, "failed to get spotify meta", slog.Any("error", err))
 		return nil, err
 	}
 	spotifyMetas := res[0].([]TrackMeta)
+	for _, spotifyMeta := range spotifyMetas {
+		spotifyMeta.ID = id
+	}
 	bestMeta := s.GetBestMetaMatch(ctx, trackMeta, spotifyMetas)
 	return &bestMeta, nil
 }
@@ -146,6 +150,7 @@ func (s *Service) GetSpotifyMeta(ctx context.Context, trackMeta TrackMeta) ([]Tr
 		resMeta.Artist = strings.Join(artists, ", ")
 		resMeta.Album = track.Album.Name
 		resMeta.Title = track.Name
+		resMeta.ID = trackMeta.ID
 		trackMetas = append(trackMetas, resMeta)
 	}
 
@@ -177,21 +182,21 @@ func (s *Service) GetBestMetaMatch(ctx context.Context, trackMeta TrackMeta, spo
 		artists = append(artists, s.SanitizeAuthor(coverArtist))
 	}
 	if len(spotifyMetas) == 0 {
-		spotifyMetas, err := s.GetSpotifyMeta(ctx, TrackMeta{Title: sanitizedTitle, Artist: trackMeta.Artist})
+		spotifyMetas, err := s.GetSpotifyMeta(ctx, TrackMeta{Title: sanitizedTitle, Artist: trackMeta.Artist, ID: trackMeta.ID})
 		if err != nil {
 			logger.ErrorC(ctx, "failed to get spotify meta", slog.Any("error", err))
-			return TrackMeta{Title: sanitizedTitle, Artist: trackMeta.Artist, Album: sanitizedTitle, CoverArtURL: trackMeta.CoverArtURL}
+			return TrackMeta{Title: sanitizedTitle, Artist: trackMeta.Artist, Album: sanitizedTitle, ID: trackMeta.ID, CoverArtURL: trackMeta.CoverArtURL}
 		}
 		if coverArtist != "" {
-			caSpotifyMetas, err := s.GetSpotifyMeta(ctx, TrackMeta{Title: sanitizedTitle, Artist: coverArtist})
+			caSpotifyMetas, err := s.GetSpotifyMeta(ctx, TrackMeta{Title: sanitizedTitle, Artist: coverArtist, ID: trackMeta.ID})
 			if err != nil {
 				logger.ErrorC(ctx, "failed to get spotify meta", slog.Any("error", err))
-				return TrackMeta{Title: sanitizedTitle, Artist: trackMeta.Artist, Album: sanitizedTitle, CoverArtURL: trackMeta.CoverArtURL}
+				return TrackMeta{Title: sanitizedTitle, Artist: trackMeta.Artist, Album: sanitizedTitle, ID: trackMeta.ID, CoverArtURL: trackMeta.CoverArtURL}
 			}
 			spotifyMetas = append(spotifyMetas, caSpotifyMetas...)
 		}
 		if len(spotifyMetas) == 0 {
-			return TrackMeta{Title: sanitizedTitle, Artist: trackMeta.Artist, Album: sanitizedTitle, CoverArtURL: trackMeta.CoverArtURL}
+			return TrackMeta{Title: sanitizedTitle, Artist: trackMeta.Artist, Album: sanitizedTitle, ID: trackMeta.ID, CoverArtURL: trackMeta.CoverArtURL}
 		}
 	}
 	sanitizedSplits := strings.Split(strings.ReplaceAll(sanitizedTitle, ":", "-"), "-")
@@ -236,7 +241,7 @@ func (s *Service) GetBestMetaMatch(ctx context.Context, trackMeta TrackMeta, spo
 			if s.EqualIgnoringWhitespace(coverArtist, spotifyMeta.Artist) {
 				for _, title := range titles {
 					if s.EqualIgnoringWhitespace(title, spotifyMeta.Title) {
-						return TrackMeta{Title: spotifyMeta.Title, Artist: spotifyMeta.Artist, Album: spotifyMeta.Album, CoverArtURL: spotifyMeta.CoverArtURL}
+						return TrackMeta{Title: spotifyMeta.Title, Artist: spotifyMeta.Artist, Album: spotifyMeta.Album, ID: trackMeta.ID, CoverArtURL: spotifyMeta.CoverArtURL}
 					}
 				}
 			}
@@ -245,7 +250,7 @@ func (s *Service) GetBestMetaMatch(ctx context.Context, trackMeta TrackMeta, spo
 			if s.EqualIgnoringWhitespace(title, spotifyMeta.Title) {
 				for _, artist := range artists {
 					if s.EqualIgnoringWhitespace(artist, spotifyMeta.Artist) {
-						return TrackMeta{Title: spotifyMeta.Title, Artist: spotifyMeta.Artist, Album: spotifyMeta.Album, CoverArtURL: spotifyMeta.CoverArtURL}
+						return TrackMeta{Title: spotifyMeta.Title, Artist: spotifyMeta.Artist, Album: spotifyMeta.Album, ID: trackMeta.ID, CoverArtURL: spotifyMeta.CoverArtURL}
 					}
 				}
 			}

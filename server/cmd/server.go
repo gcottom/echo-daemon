@@ -11,12 +11,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/VoidObscura/echodaemon/config"
-	"github.com/VoidObscura/echodaemon/handlers"
-	"github.com/VoidObscura/echodaemon/logger"
-	"github.com/VoidObscura/echodaemon/services/downloader"
-	"github.com/VoidObscura/echodaemon/services/meta"
 	"github.com/gcottom/audiometa/v3"
+	"github.com/gcottom/echodaemon/config"
+	"github.com/gcottom/echodaemon/handlers"
+	"github.com/gcottom/echodaemon/logger"
+	"github.com/gcottom/echodaemon/services/downloader"
+	"github.com/gcottom/echodaemon/services/meta"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	spotifyauth "github.com/zmb3/spotify/v2/auth"
@@ -32,6 +32,7 @@ func main() {
 func RunServer() error {
 	ctx := logger.WithLogger(context.Background(), logger.DefaultLogger)
 	logger.InfoC(ctx, "starting downloader server...")
+	logger.InfoC(ctx, "loading config...")
 	cfg, err := config.LoadConfigFromFile("")
 	if err != nil {
 		slog.Error("failed to load config", slog.Any("error", err))

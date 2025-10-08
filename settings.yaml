@@ -1,5 +1,16 @@
-save_dir: ./data # If using Docker, don't change this. If running via script, you can change to your desired directory
-temp_dir: ./temp # If using Docker, don't change this. If running via script, you can change to your desired directory
-music_dir: ./music # The directory where your music files are stored. If using Docker, this should be the path inside the container.
-spotify_client_id:  # Your Spotify client ID, acquired from the Spotify Developer Dashboard
-spotify_client_secret:  # Your Spotify client secret, acquired from the Spotify Developer Dashboard
+save_dir: ./data
+# If using Docker, don't change this. If running via script, you can change to your desired directory
+temp_dir: ./temp
+# If using Docker, don't change this. If running via script, you can change to your desired directory
+music_dir: ./music
+# The directory where your music files are stored. If using Docker, this should be the path inside the container.
+local_music_dir: "/Users/gagecottom/Music/Music/Media.localized/automatically add to music.localized"
+# The absolute path to the directory to move music files to after they are downloaded. Mine is the auto add directory for apple music.
+local_music_root: "/Users/gagecottom/Music/Music/Media.localized/Music"
+# The root directory for your music library. Used for duplicate detection.
+local_data_dir: "/Volumes/990pro/projects/echo-daemon/data"
+# The data directory for this programs absolute path on your local machine.
+spotify_client_id:
+# Your Spotify client ID, acquired from the Spotify Developer Dashboard
+spotify_client_secret:
+# Your Spotify client secret, acquired from the Spotify Developer Dashboard

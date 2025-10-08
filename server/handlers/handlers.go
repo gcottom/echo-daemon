@@ -1,7 +1,7 @@
 package handlers
 
 import (
-	"github.com/VoidObscura/echodaemon/services/downloader"
+	"github.com/gcottom/echodaemon/services/downloader"
 	"github.com/gin-gonic/gin"
 )
 
