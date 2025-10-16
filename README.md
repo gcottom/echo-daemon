@@ -1,32 +1,63 @@
-# Echo Daemon
+✨ Echo Daemon  
 
-A new take on the classic YouTube downloader that relies on intercepting requests in Chrome made to YouTube Music.
-Where most YouTube downloaders need an update almost weekly to patch the signature forging logic, Echo Daemon excels at being consistently able to download tracks without requiring constant updates. 
+A new take on the YouTube Music downloader — intelligent, resilient, and built for research.  
 
-⚠️ This project is a proof of concept and for educational/research purposes only.  
+Echo Daemon rethinks the classic YouTube downloader.  
+Instead of depending on brittle signature-patching logic, it intercepts YouTube Music network requests directly in Chrome, giving it long-term reliability and minimal maintenance.  
 
-## Features
-- Downloads High Quality Audio From YouTube Music
-- Parses YouTube UMP format responses to produce a WEBM audio file
-- Converts WEBM audio to MP3 using FFMPEG
-- Queries the YouTube API and Spotify API to get the best metadata for Artist, Title, Album Title, and Album Artwork
-- Uses a Python ML to detect the genre of the downloaded audio.
-- Enriches downloaded MP3 file with metadata and saves to the filesystem.
+⚠️ Disclaimer: This project is a proof of concept, intended for educational and research purposes only.  
+You are responsible for complying with all applicable terms of service and copyright laws.  
 
 
-## How to use
-- Clone this repo using ```git clone https://github.com/gcottom/echo-daemon.git``` then ```cd echo-daemon```
-- Retrieve a developer API key (clientID, clientSecret) from Spotify and add it to the settings.yaml
-- Install nodejs if not already installed.
-- Build the Chrome extension by first navigating to the chrome folder in a terminal and installing webpack by running ``` npm install webpack ``` and then running ``` npm run build ```  
-- Install the Chrome extension by activating developer mode in Chrome, then go to the Extensions menu, select "Load Unpacked", navigate to the chrome folder of this project and open the dist folder at chrome/dist then use the "select" button in the dialog to load the extension.
-- Install and launch Docker if not already installed.
-- All settings are in the settings.yaml, update the local dirs for your system
-- Run the command ```./start.sh``` to launch the backend, 
-- Wait for Docker to build the image (can take a few minutes)
-- Server will launch, wait for the "Now serving on port 50999" message
-- Navigate to YouTube Music and start streaming, every track that you listen to will be saved to the data folder.
-- The start script will automatically move the files you've downloaded from the Docker mounted data folder to the local_music_dir that you specify in settings.yaml
-- It will only attempt to download one song at a time to avoid receiving a ban.
-- ETA for downloads is shown in the logs.
-- Note that downloading the audio/ump data will take approximately half of the total length of the song in seconds. 3 minute song ~90 seconds, 12 minute song ~ 6 minutes to download. Avoids unthrottling connections to prevent receiving a ban. 
+🚀 Features  
+	•	High-Quality Audio Capture from YouTube Music  
+	•	Parses YouTube UMP (Unified Media Player) format responses to extract clean .webm audio  
+	•	Converts WEBM → MP3 automatically via FFmpeg  
+	•	Metadata Enrichment: Queries the YouTube API and Spotify API to fetch artist, title, album, and artwork  
+	•	Genre Classification: Uses a Python ML model to infer track genre  
+	•	Automatic Tagging: Embeds metadata into the final MP3 and saves it to disk  
+	•	Passive or On-Demand Modes: Works both while streaming or through manual track requests  
+
+
+🧩 Architecture Overview  
+Chrome Extension  →  Echo Daemon Backend (Go)  →  FFmpeg  →  YouTube API For Base/Fallback Metadata (Python) → Spotify API For Complete Metadata (Go)  →  ML Genre Identifier (Python) → ID3 Tagger  →  MP3 + Tags
+
+
+⚙️ Setup & Usage  
+	1.	Clone the repo  
+  ```git clone https://github.com/gcottom/echo-daemon.git```  
+  ```cd echo-daemon```  
+  2.	Retrieve Spotify API credentials (clientID, clientSecret) and add them to settings.yaml.  
+  3.	Install Node.js (if not already installed).  
+  4.	Build the Chrome extension:  
+  ```cd chrome```  
+  ```npm install webpack```  
+  ```npm run build```  
+  5.	Load the extension in Chrome → Extensions > Developer Mode > Load Unpacked → select chrome/dist/.  
+  6.	Install and launch Docker.  
+  7.	Update paths in settings.yaml for your environment.  
+  8.	Run the backend:  
+  ```./start.sh```  
+  Wait for the message:  
+  ```echo-daemon ready!```  
+  9.	Stream from YouTube Music — tracks you play are saved to data/ and then moved to local_music_dir.  
+  
+
+📄 Environment Variables (settings.yaml)  
+  •	save_dir: Directory that the Docker container can write save files to (has to be local to the container)  
+  •	temp_dir: Directory that in progress downloads are written to (has to be local to the container)  
+  •	music_dir: Linked Directory that allows the container to write to the directory specified in local_music_dir (do not change this)  
+  •	local_music_dir: Directory that you want completed downloads to go to (absolute path)  
+  •	local_music_root: The root of your music library (this is used to prevent duplicates appearing in your library, absolute path)  
+  •	local_data_dir: The absolute path of the data directory in the root of this project  
+  •	spotify_client_id: Your Spotify Client ID, retrieved from Spotify Developer Portal  
+  •	spotify_client_secret: Your Spotify Client Secret, retrieved from the Spotify Developer Portal  
+
+  
+🧠 Notes  
+  •	Keeps consistent performance without frequent patches.  
+  •	All request interception is local; no third-party proxies involved.  
+  •	Fully containerized for portability.  
+
+🪪 License  
+MIT License - see LICENSE for details.   
