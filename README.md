@@ -20,7 +20,7 @@ You are responsible for complying with all applicable terms of service and copyr
 
 
 🧩 Architecture Overview  
-Chrome Extension  →  Echo Daemon Backend (Go)  →  FFmpeg  →  YouTube API For Base/Fallback Metadata (Python) → Spotify API For Complete Metadata (Go)  →  ML Genre Identifier (Python) → ID3 Tagger  →  MP3 + Tags
+Chrome Extension  ->  Echo Daemon Backend (Go)  ->  FFmpeg  ->  YouTube API For Base/Fallback Metadata (Python) -> Spotify API For Complete Metadata (Go)  ->  ML Genre Identifier (Python) -> ID3 Tagger  ->  Enriched MP3 Audio
 
 
 ⚙️ Setup & Usage  
