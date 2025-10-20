@@ -1,5 +1,19 @@
 import argparse
 import json
+import gettext as _gettext
+
+# Ensure gettext returns a fallback instead of raising if translations are missing (e.g., in PyInstaller)
+# We set a safe wrapper that always enables fallback and never raises when translation catalogs are absent.
+_real_gettext_translation = _gettext.translation
+
+def _safe_translation(domain, localedir=None, languages=None, *args, **kwargs):
+    kwargs.setdefault('fallback', True)
+    try:
+        return _real_gettext_translation(domain, localedir=localedir, languages=languages, *args, **kwargs)
+    except Exception:
+        return _gettext.NullTranslations()
+
+_gettext.translation = _safe_translation
 
 from ytmusicapi import YTMusic
 
@@ -25,6 +39,11 @@ def get_playlist(id):
 
 def main():
     parser = argparse.ArgumentParser(description="Music API Command Line Tool")
+    # Note on argument parsing and '--':
+    # Callers may insert "--" before an ID that starts with '-' to terminate option parsing.
+    # argparse treats "--" as the standard end-of-options marker and does NOT include it
+    # in any parsed values. With only positional args defined here, this ensures IDs that
+    # begin with '-' are still parsed into args.id correctly.
     parser.add_argument('command', choices=['meta', 'playlist'], help="Command to execute")
     parser.add_argument('id', help="ID for the command")
     args = parser.parse_args()

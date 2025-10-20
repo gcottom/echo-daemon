@@ -11,3 +11,6 @@
 /.idea/copilot.data.migration.edit.xml
 /.idea/JunieProjectTechnologies.xml
 /.idea/watcherTasks.xml
+/cleanup.sh
+/.air.toml
+/.air/build-errors.log

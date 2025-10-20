@@ -11,22 +11,14 @@ type Handlers struct {
 
 func SetupRoutes(router *gin.Engine, downloaderService *downloader.Service) {
 	handler := &Handlers{Downloader: downloaderService}
-	router.POST("/capturestart", handler.CaptureStart)
-	router.POST("capture", handler.Capture)
+	router.GET("/download/:id", handler.Download)
 }
 
-func (h *Handlers) CaptureStart(ctx *gin.Context) {
-	var reqData downloader.CaptureStartRequest
-	ctx.ShouldBindJSON(&reqData)
-	h.Downloader.NewCapture(ctx, reqData.ID)
-	ResponseSuccess(ctx, StartDownloadResponse{State: "ACK"})
-
-}
-
-func (h *Handlers) Capture(ctx *gin.Context) {
-	var reqData downloader.CaptureRequest
-	ctx.ShouldBindJSON(&reqData)
-	h.Downloader.ContinueCapture(ctx, reqData)
-	ResponseSuccess(ctx, StartDownloadResponse{State: "ACK"})
-
+func (h *Handlers) Download(ctx *gin.Context) {
+	id := ctx.Param("id")
+	if err := h.Downloader.DownloadByID(ctx, id); err != nil {
+		ResponseFailure(ctx, err)
+		return
+	}
+	ResponseSuccess(ctx, StartDownloadResponse{State: "DOWNLOAD_INITIATED"})
 }

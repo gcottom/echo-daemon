@@ -26,13 +26,15 @@ type GenreResponse struct {
 }
 
 func (s *Service) AddMeta(ctx context.Context, id string, filepath string) ([]byte, error) {
+	logger.InfoC(ctx, "fetching metadata", slog.String("id", id))
 	trackMeta, err := s.GetBestMeta(ctx, id)
 	if err != nil {
 		logger.ErrorC(ctx, "failed to get best meta", slog.Any("error", err))
 		return nil, err
 	}
-	logger.InfoC(ctx, "starting meta genre enrichment", slog.String("id", id))
-	res, err := internal.OSExecuteFindJSONStart(ctx, "python", "./python/genre-service/genre-service.py", filepath)
+	s.GenreLimiter <- struct{}{}
+	logger.InfoC(ctx, "starting genre identification", slog.String("id", id))
+	res, err := internal.OSExecuteFindJSONStart(ctx, "./genre_service_bin", filepath)
 	if err != nil {
 		logger.ErrorC(ctx, "failed to add meta", slog.Any("error", err))
 	}
@@ -40,6 +42,8 @@ func (s *Service) AddMeta(ctx context.Context, id string, filepath string) ([]by
 	if err = json.Unmarshal(res, &genreRes); err != nil {
 		logger.ErrorC(ctx, "failed to unmarshal genre response", slog.Any("error", err))
 	}
+	logger.InfoC(ctx, "genre identification complete", slog.String("id", id), slog.String("genre", genreRes.Genre))
+	<-s.GenreLimiter
 	trackMeta.Genre = genreRes.Genre
 	out := new(bytes.Buffer)
 
@@ -48,7 +52,10 @@ func (s *Service) AddMeta(ctx context.Context, id string, filepath string) ([]by
 		logger.ErrorC(ctx, "failed to open file", slog.Any("error", err))
 		return nil, err
 	}
-	defer f.Close()
+	defer func() {
+		_ = f.Close()
+	}()
+	logger.InfoC(ctx, "enriching downloaded data", slog.String("id", id), slog.String("artist", trackMeta.Artist), slog.String("title", trackMeta.Title), slog.String("album", trackMeta.Album), slog.String("genre", trackMeta.Genre))
 	tag, err := audiometa.OpenTag(f)
 	if err != nil {
 		logger.ErrorC(ctx, "failed to open tag", slog.Any("error", err))
@@ -59,12 +66,15 @@ func (s *Service) AddMeta(ctx context.Context, id string, filepath string) ([]by
 	tag.SetTitle(strings.TrimSpace(trackMeta.Title))
 	tag.SetGenre(strings.TrimSpace(trackMeta.Genre))
 	if trackMeta.CoverArtURL != "" {
+		logger.InfoC(ctx, "fetching cover art", slog.String("id", id), slog.String("url", trackMeta.CoverArtURL))
 		response, err := http.Get(trackMeta.CoverArtURL)
 		if err != nil {
 			logger.ErrorC(ctx, "failed to get cover art", slog.Any("error", err))
 			return nil, err
 		}
-		defer response.Body.Close()
+		defer func() {
+			_ = response.Body.Close()
+		}()
 		img, _, err := image.Decode(response.Body)
 		if err != nil {
 			logger.ErrorC(ctx, "failed to decode cover art", slog.Any("error", err))
@@ -76,6 +86,7 @@ func (s *Service) AddMeta(ctx context.Context, id string, filepath string) ([]by
 		logger.ErrorC(ctx, "failed to save tag", slog.Any("error", err))
 		return nil, err
 	}
+	logger.InfoC(ctx, "enrichment complete", slog.String("id", id), slog.String("artist", trackMeta.Artist), slog.String("title", trackMeta.Title), slog.String("album", trackMeta.Album), slog.String("genre", trackMeta.Genre))
 	return out.Bytes(), nil
 }
 
@@ -102,9 +113,16 @@ func (s *Service) GetBestMeta(ctx context.Context, id string) (*TrackMeta, error
 
 func (s *Service) GetYTMetaFromID(ctx context.Context, id string) (TrackMeta, error) {
 	logger.InfoC(ctx, "getting meta via yt api", slog.String("id", id))
-	res, err := internal.OSExecuteFindJSONStart(ctx, "python", "./python/music-api/music-api.py", "meta", id)
+	// If the id begins with '-', insert '--' to terminate option parsing for argparse
+	args := []string{"meta"}
+	if strings.HasPrefix(id, "-") {
+		args = append(args, "--", id)
+	} else {
+		args = append(args, id)
+	}
+	res, err := internal.OSExecuteFindJSONStart(ctx, "./music_api_bin", args...)
 	if err != nil {
-		logger.ErrorC(ctx, "failed to get yt meta", slog.Any("error", err))
+		logger.ErrorC(ctx, "failed to get yt meta", slog.Any("error", err), res)
 		return TrackMeta{}, err
 	}
 	var meta YTMMetaResponse
@@ -181,21 +199,25 @@ func (s *Service) GetBestMetaMatch(ctx context.Context, trackMeta TrackMeta, spo
 	if coverArtist != "" {
 		artists = append(artists, s.SanitizeAuthor(coverArtist))
 	}
+	var err error
 	if len(spotifyMetas) == 0 {
-		spotifyMetas, err := s.GetSpotifyMeta(ctx, TrackMeta{Title: sanitizedTitle, Artist: trackMeta.Artist, ID: trackMeta.ID})
+		spotifyMetas, err = s.GetSpotifyMeta(ctx, TrackMeta{Title: sanitizedTitle, Artist: trackMeta.Artist, ID: trackMeta.ID})
 		if err != nil {
 			logger.ErrorC(ctx, "failed to get spotify meta", slog.Any("error", err))
+			logger.InfoC(ctx, "using youtube meta since no spotify meta was found", slog.String("title", sanitizedTitle), slog.String("artist", trackMeta.Artist))
 			return TrackMeta{Title: sanitizedTitle, Artist: trackMeta.Artist, Album: sanitizedTitle, ID: trackMeta.ID, CoverArtURL: trackMeta.CoverArtURL}
 		}
 		if coverArtist != "" {
 			caSpotifyMetas, err := s.GetSpotifyMeta(ctx, TrackMeta{Title: sanitizedTitle, Artist: coverArtist, ID: trackMeta.ID})
 			if err != nil {
 				logger.ErrorC(ctx, "failed to get spotify meta", slog.Any("error", err))
+				logger.InfoC(ctx, "using youtube meta since no spotify meta was found", slog.String("title", sanitizedTitle), slog.String("artist", trackMeta.Artist))
 				return TrackMeta{Title: sanitizedTitle, Artist: trackMeta.Artist, Album: sanitizedTitle, ID: trackMeta.ID, CoverArtURL: trackMeta.CoverArtURL}
 			}
 			spotifyMetas = append(spotifyMetas, caSpotifyMetas...)
 		}
 		if len(spotifyMetas) == 0 {
+			logger.InfoC(ctx, "using youtube meta since no spotify meta was found", slog.String("title", sanitizedTitle), slog.String("artist", trackMeta.Artist))
 			return TrackMeta{Title: sanitizedTitle, Artist: trackMeta.Artist, Album: sanitizedTitle, ID: trackMeta.ID, CoverArtURL: trackMeta.CoverArtURL}
 		}
 	}
@@ -241,7 +263,7 @@ func (s *Service) GetBestMetaMatch(ctx context.Context, trackMeta TrackMeta, spo
 			if s.EqualIgnoringWhitespace(coverArtist, spotifyMeta.Artist) {
 				for _, title := range titles {
 					if s.EqualIgnoringWhitespace(title, spotifyMeta.Title) {
-						return TrackMeta{Title: spotifyMeta.Title, Artist: spotifyMeta.Artist, Album: spotifyMeta.Album, ID: trackMeta.ID, CoverArtURL: spotifyMeta.CoverArtURL}
+						return TrackMeta{Title: strings.TrimSpace(spotifyMeta.Title), Artist: strings.TrimSpace(spotifyMeta.Artist), Album: strings.TrimSpace(spotifyMeta.Album), ID: trackMeta.ID, CoverArtURL: spotifyMeta.CoverArtURL}
 					}
 				}
 			}
@@ -250,7 +272,7 @@ func (s *Service) GetBestMetaMatch(ctx context.Context, trackMeta TrackMeta, spo
 			if s.EqualIgnoringWhitespace(title, spotifyMeta.Title) {
 				for _, artist := range artists {
 					if s.EqualIgnoringWhitespace(artist, spotifyMeta.Artist) {
-						return TrackMeta{Title: spotifyMeta.Title, Artist: spotifyMeta.Artist, Album: spotifyMeta.Album, ID: trackMeta.ID, CoverArtURL: spotifyMeta.CoverArtURL}
+						return TrackMeta{Title: strings.TrimSpace(spotifyMeta.Title), Artist: strings.TrimSpace(spotifyMeta.Artist), Album: strings.TrimSpace(spotifyMeta.Album), ID: trackMeta.ID, CoverArtURL: spotifyMeta.CoverArtURL}
 					}
 				}
 			}
@@ -261,7 +283,14 @@ func (s *Service) GetBestMetaMatch(ctx context.Context, trackMeta TrackMeta, spo
 }
 
 func (s *Service) GetPlaylistEntries(ctx context.Context, playlistID string) ([]string, error) {
-	res, err := internal.OSExecuteFindJSONStart(ctx, "python", "./python/music-api/music-api.py", "playlist", playlistID)
+	// Shield playlist IDs that might begin with '-' from argparse option parsing
+	pargs := []string{"playlist"}
+	if strings.HasPrefix(playlistID, "-") {
+		pargs = append(pargs, "--", playlistID)
+	} else {
+		pargs = append(pargs, playlistID)
+	}
+	res, err := internal.OSExecuteFindJSONStart(ctx, "./music_api_bin", pargs...)
 	if err != nil {
 		logger.ErrorC(ctx, "failed to get playlist entries", slog.Any("error", err))
 		return nil, err

@@ -6,6 +6,7 @@ import (
 
 type Service struct {
 	SpotifyConfig *clientcredentials.Config
+	GenreLimiter  chan struct{}
 }
 
 type TrackMeta struct {

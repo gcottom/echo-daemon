@@ -31,11 +31,20 @@ mkdir -p "$DIR_A"
 
 cleanup(){
   log "Shutting down"
-  # Attempt to gracefully stop compose stack
-  docker compose down -v >/dev/null 2>&1
+  # If docker compose is running, kill its entire process group immediately
+  if [ -n "${COMPOSE_PID:-}" ] && kill -0 "$COMPOSE_PID" 2>/dev/null; then
+    log "Killing docker compose process group (PGID -$COMPOSE_PID)"
+    kill -TERM "-$COMPOSE_PID" 2>/dev/null || true
+    sleep 1
+    # Fallback to SIGKILL if still running
+    kill -KILL "-$COMPOSE_PID" 2>/dev/null || true
+  fi
+  # Attempt to gracefully stop compose stack and remove volumes
+  docker compose down -v >/dev/null 2>&1 || true
   exit 0
 }
-trap cleanup INT TERM
+# Ensure cleanup runs on common termination signals and normal shell exit
+trap cleanup INT TERM HUP QUIT EXIT
 
 [ -d "$DIR_A" ] || { log "ERROR: Source missing: $DIR_A"; exit 1; }
 [ -d "$DIR_B" ] || { log "ERROR: Dest missing:   $DIR_B"; exit 1; }

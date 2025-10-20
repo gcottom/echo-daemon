@@ -44,15 +44,14 @@ func RunServer() error {
 		ClientID:     cfg.SpotifyClientID,
 		ClientSecret: cfg.SpotifyClientSecret,
 		TokenURL:     spotifyauth.TokenURL,
-	}}
+	},
+		GenreLimiter: make(chan struct{}, 1)}
 
 	libMap := new(sync.Map)
 	initLibraryMap(ctx, libMap, cfg.MusicDir)
 	logger.InfoC(ctx, "creating downloader service...")
 	downloaderService := &downloader.Service{
 		MetaServiceClient: metaService,
-		CaptureChannel:    make(chan downloader.CaptureChanData, 100),
-		CurrentCapture:    new(downloader.CurrentCapture),
 		LibraryMap:        libMap,
 	}
 
@@ -72,12 +71,9 @@ func RunServer() error {
 
 	logger.InfoC(ctx, "setting up routes...")
 	handlers.SetupRoutes(ginws, downloaderService)
-
-	logger.InfoC(ctx, "starting capture processor...")
-	go downloaderService.CaptureProcessor(ctx)
-
 	logger.InfoC(ctx, "setup complete, starting server...")
 	logger.InfoC(ctx, "now listening on port 50999!")
+	logger.InfoC(ctx, "echo-daemon ready!")
 	return http.ListenAndServe(":50999", ginws)
 }
 
@@ -100,13 +96,13 @@ func initLibraryMap(ctx context.Context, libMap *sync.Map, musicDir string) {
 				slog.Any("error", err))
 			return nil
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		tag, err := audiometa.OpenTag(f)
 		if err != nil {
 			return nil // Skip files with no tags
 		}
 		if strings.TrimSpace(tag.GetTitle()) == "" || strings.TrimSpace(tag.GetArtist()) == "" {
-			return nil // Skip files with empty title or artist
+			return nil // Skip files with an empty title or artist
 		}
 		count++
 		libMap.Store(strings.TrimSpace(tag.GetTitle())+" - "+strings.TrimSpace(tag.GetArtist()), true)
