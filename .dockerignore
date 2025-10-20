@@ -1,0 +1,102 @@
+# ===============================
+# Core Git
+# ===============================
+.git
+.gitignore
+.github/
+
+# ===============================
+# Build artifacts
+# ===============================
+*.exe
+*.dll
+*.so
+*.dylib
+*.pyc
+*.pyo
+*.pyd
+*.class
+__pycache__/
+*.log
+*.out
+*.tmp
+
+# ===============================
+# Dependency & build directories
+# ===============================
+node_modules/
+venv/
+.env/
+.env.*
+.cache/
+dist/
+build/
+bin/
+obj/
+tmp/
+coverage/
+
+# ===============================
+# OS & editor junk
+# ===============================
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
+*.iml
+
+# ===============================
+# Language-specific
+# ===============================
+
+# Python
+*.egg
+*.egg-info/
+.eggs/
+MANIFEST
+pip-log.txt
+
+# ===============================
+# Chrome / browser extension
+# ===============================
+chrome/dist/
+chrome/node_modules/
+chrome/build/
+chrome/.env
+
+# ===============================
+# Docker itself
+# ===============================
+
+# ===============================
+# Tests & examples
+# ===============================
+tests/
+examples/
+testdata/
+
+# ===============================
+# Local scripts / config
+# ===============================
+*.local
+*.bak
+*.old
+*.orig
+*.swp
+*.swn
+*.swo
+*.rej
+
+# ===============================
+# Misc
+# ===============================
+__MACOSX
+*.tar
+*.zip
+*.7z
+*.gz
+*.tgz
+*.bz2
+*.rar
