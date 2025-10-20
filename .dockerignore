@@ -69,8 +69,6 @@ chrome/.env
 # ===============================
 # Docker itself
 # ===============================
-Dockerfile
-docker-compose.yml
 
 # ===============================
 # Tests & examples
