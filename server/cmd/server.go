@@ -96,13 +96,13 @@ func initLibraryMap(ctx context.Context, libMap *sync.Map, musicDir string) {
 				slog.Any("error", err))
 			return nil
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		tag, err := audiometa.OpenTag(f)
 		if err != nil {
 			return nil // Skip files with no tags
 		}
 		if strings.TrimSpace(tag.GetTitle()) == "" || strings.TrimSpace(tag.GetArtist()) == "" {
-			return nil // Skip files with empty title or artist
+			return nil // Skip files with an empty title or artist
 		}
 		count++
 		libMap.Store(strings.TrimSpace(tag.GetTitle())+" - "+strings.TrimSpace(tag.GetArtist()), true)

@@ -72,7 +72,9 @@ func (s *Service) AddMeta(ctx context.Context, id string, filepath string) ([]by
 			logger.ErrorC(ctx, "failed to get cover art", slog.Any("error", err))
 			return nil, err
 		}
-		defer response.Body.Close()
+		defer func() {
+			_ = response.Body.Close()
+		}()
 		img, _, err := image.Decode(response.Body)
 		if err != nil {
 			logger.ErrorC(ctx, "failed to decode cover art", slog.Any("error", err))
