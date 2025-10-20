@@ -337,7 +337,7 @@ func (s *Service) FindDownloadTarget(ctx context.Context, id string) (*CaptureRe
 		chromedp.WaitReady("body", chromedp.ByQuery),
 		chromedp.Sleep(1200*time.Millisecond),
 		chromedp.EvaluateAsDevTools("Array.from(document.querySelectorAll('video,audio')).forEach(m=>{try{m.muted=true;m.volume=0;}catch(e){}})", nil),
-	); err != nil && !errors.Is(err, context.Canceled) {
+	); err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 		return nil, err
 	}
 	out := <-ch
