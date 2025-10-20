@@ -340,9 +340,16 @@ func (s *Service) FindDownloadTarget(ctx context.Context, id string) (*CaptureRe
 	); err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 		return nil, err
 	}
-	out := <-ch
-	logger.InfoC(ctx, "found download target", slog.String("id", id))
-	return &out, nil
+	var out CaptureRequest
+	select {
+	case out = <-ch:
+		logger.InfoC(ctx, "found download target", slog.String("id", id))
+		return &out, nil
+	case <-ctx.Done():
+		return nil, fmt.Errorf("context cancelled or deadline exceeded while waiting for download target: %w", ctx.Err())
+	case <-time.After(15 * time.Second):
+		return nil, fmt.Errorf("timeout waiting for download target")
+	}
 }
 
 func ReplayCapture(ctx context.Context, capReq CaptureRequest, id string) ([]byte, error) {
