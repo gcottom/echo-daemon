@@ -29,6 +29,6 @@ RUN pip3 install -r /app/python/genre-service/requirements.txt && \
     pip3 install -r /app/python/music-api/requirements.txt
 RUN pip3 install pyinstaller
 # Use the correct script filenames (with hyphens) present in the repository
-RUN pyinstaller --onefile /app/python/genre-service/genre-service.py --name genre_service_bin --distpath /app
-RUN pyinstaller --onefile /app/python/music-api/music-api.py --name music_api_bin --distpath /app
+RUN pyinstaller --clean --onefile /app/python/genre-service/genre-service.py --name genre_service_bin --distpath /app
+RUN pyinstaller --clean --onefile /app/python/music-api/music-api.py --name music_api_bin --distpath /app
 ENTRYPOINT ["./server"]
