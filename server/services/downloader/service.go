@@ -187,7 +187,6 @@ func truncateBytes(s string, n int) string {
 
 func (s *Service) Cleanup(ctx context.Context, id string) {
 	_ = os.Remove(fmt.Sprintf("%s/%s.%s", config.AppConfig.TempDir, id, internal.FILEFORMAT))
-	_ = os.Remove(fmt.Sprintf("%s/%s.%s", config.AppConfig.TempDir, id, internal.FILEFORMAT))
 }
 
 func (s *Service) DownloadByID(ctx context.Context, id string) error {
