@@ -41,7 +41,9 @@ Chrome Extension  ->  Echo Daemon Backend (Go)  ->  FFmpeg  ->  YouTube API For 
   Wait for the message:  
   ```echo-daemon ready!```  
   9.	Stream from YouTube Music — tracks you play are saved to data/ and then moved to local_music_dir.  
-  
+  10.   To download a track on demand, start the echo-daemon server in a docker container, find the video ID in the URL, and make a GET request to the backend:  
+    ```http://localhost:8080/download/VIDEO_ID_HERE```  
+You can do this in any browser or using curl or Postman. 
 
 📄 Environment Variables (settings.yaml)  
   •	save_dir: Directory that the Docker container can write save files to (has to be local to the container)  
