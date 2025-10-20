@@ -9,7 +9,11 @@ os.environ['NUMBA_CACHE_DIR'] = '/tmp/numba_cache'
 def process_track(file_path):
     tops = 5
     t = top_tags(file_path, model='MSD_musicnn', topN=tops, print_tags=False)
-    v = top_tags(file_path, model='MSD_vgg', topN=tops, print_tags=False)
+    # MSD_vgg model is not bundled/available; attempt gracefully and ignore if unavailable
+    try:
+        v = top_tags(file_path, model='MSD_vgg', topN=tops, print_tags=False)
+    except Exception:
+        v = []
     x = top_tags(file_path, model='MTT_musicnn', topN=tops, print_tags=False)
     y = top_tags(file_path, model='MTT_vgg', topN=tops, print_tags=False)
     z = {}
@@ -19,21 +23,21 @@ def process_track(file_path):
         w=w-1
     w=tops
     for l in v:
-        if l in z: 
+        if l in z:
             z[l] = z[l] +w
         else:
             z[l] = w
         w=w-1
     w=tops
     for l in x:
-        if l in z: 
+        if l in z:
             z[l] = z[l] +w
         else:
             z[l] = w
         w=w-1
     w=tops
     for l in y:
-        if l in z: 
+        if l in z:
             z[l] = z[l] +w
         else:
             z[l] = w

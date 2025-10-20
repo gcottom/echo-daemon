@@ -14,6 +14,7 @@ import (
 )
 
 func ConvertFile(ctx context.Context, b []byte) ([]byte, error) {
+	logger.InfoC(ctx, "converting file", slog.String("id", ctx.Value("id").(string)))
 	// Decode and transcode while regenerating linear audio timestamps to avoid gaps at joins.
 	var args = []string{
 		"-hide_banner", "-loglevel", "error",
@@ -43,17 +44,21 @@ func ConvertFile(ctx context.Context, b []byte) ([]byte, error) {
 		logger.ErrorC(ctx, "conversion error", slog.Any("error", errWrap))
 		return nil, errWrap
 	}
+	logger.InfoC(ctx, "conversion complete", slog.String("id", ctx.Value("id").(string)))
 	return stdout.Bytes(), nil
 }
 
 func OSExecuteFindJSONStart(ctx context.Context, command string, args ...string) ([]byte, error) {
 	cmd := exec.Command(command, args...)
 	var out bytes.Buffer
+	var stderr bytes.Buffer
 	cmd.Stdout = &out
+	cmd.Stderr = &stderr
 	err := cmd.Run()
 	if err != nil {
-		logger.ErrorC(ctx, "failed to execute command", slog.Any("error", err))
-		return nil, err
+		errWrap := fmt.Errorf("exec failed: %w; stderr: %s", err, stderr.String())
+		logger.ErrorC(ctx, "failed to execute command", slog.Any("error", errWrap))
+		return nil, errWrap
 	}
 	i := bytes.LastIndex(out.Bytes(), []byte("{"))
 	return out.Bytes()[i:], nil

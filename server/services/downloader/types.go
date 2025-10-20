@@ -8,8 +8,6 @@ import (
 
 type Service struct {
 	MetaServiceClient *meta.Service
-	CurrentCapture    *CurrentCapture
-	CaptureChannel    chan CaptureChanData
 	LibraryMap        *sync.Map
 }
 
@@ -37,4 +35,10 @@ type CaptureChanData struct {
 	CaptureRequest *CaptureRequest
 }
 
+type SegData struct {
+	C    int
+	Data []byte
+}
+
 const MinimumDownloadSize = 1000000
+const MB = 1024 * 1024
