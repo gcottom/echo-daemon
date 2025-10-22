@@ -14,6 +14,7 @@ import (
 	"github.com/gcottom/audiometa/v3"
 	"github.com/gcottom/echodaemon/config"
 	"github.com/gcottom/echodaemon/handlers"
+	"github.com/gcottom/echodaemon/internal/genreengine"
 	"github.com/gcottom/echodaemon/logger"
 	"github.com/gcottom/echodaemon/services/downloader"
 	"github.com/gcottom/echodaemon/services/meta"
@@ -40,12 +41,34 @@ func RunServer() error {
 	}
 
 	logger.InfoC(ctx, "creating meta service...")
+	// Initialize genre engine once and inject into meta service
+	defGenre := "Electronic"
+	if strings.TrimSpace(cfg.DefaultGenre) != "" {
+		defGenre = cfg.DefaultGenre
+	}
+	engOpt := genreengine.Options{
+		ModelDir:     "/app/models",
+		DefaultGenre: defGenre,
+		WorkDir:      "/tmp",
+	}
+	eng, engErr := genreengine.NewPreferredEngine(engOpt)
+	if engErr != nil {
+		logger.ErrorC(ctx, "genre engine initialization: falling back to heuristic", slog.Any("error", engErr))
+	} else {
+		logger.InfoC(ctx, "genre engine initialized")
+		// Optional startup validation: classify any audio files in /app/samples when enabled
+		if os.Getenv("VALIDATE_GENRE_SAMPLES") != "" {
+			validateSamples(ctx, eng, "/app/samples")
+		}
+	}
 	metaService := &meta.Service{SpotifyConfig: &clientcredentials.Config{
 		ClientID:     cfg.SpotifyClientID,
 		ClientSecret: cfg.SpotifyClientSecret,
 		TokenURL:     spotifyauth.TokenURL,
 	},
-		GenreLimiter: make(chan struct{}, 1)}
+		GenreLimiter: make(chan struct{}, 1),
+		Engine:       eng,
+	}
 
 	libMap := new(sync.Map)
 	initLibraryMap(ctx, libMap, cfg.MusicDir)
@@ -112,4 +135,23 @@ func initLibraryMap(ctx context.Context, libMap *sync.Map, musicDir string) {
 		return
 	}
 	logger.InfoC(ctx, "library map initialized", slog.Int("size", count))
+}
+
+// validateSamples classifies audio files under dir and logs the results. Enabled by env var.
+func validateSamples(ctx context.Context, eng genreengine.Engine, dir string) {
+	_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		ext := strings.ToLower(filepath.Ext(path))
+		if ext == ".mp3" || ext == ".wav" || ext == ".flac" || ext == ".m4a" || ext == ".ogg" {
+			res, err := eng.Classify(ctx, path, 5)
+			if err != nil {
+				logger.ErrorC(ctx, "validation classify failed", slog.String("file", filepath.Base(path)), slog.Any("error", err))
+			} else {
+				logger.InfoC(ctx, "validation classify result", slog.String("file", filepath.Base(path)), slog.String("genre", res.Genre))
+			}
+		}
+		return nil
+	})
 }

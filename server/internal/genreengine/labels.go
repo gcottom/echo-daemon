@@ -1,0 +1,8 @@
+package genreengine
+
+// Labels mirrored from python/genre-service/musicnn/configuration.py
+// MTT_LABELS and MSD_LABELS are used to map model outputs to human-readable tags.
+
+var MTT_LABELS = []string{"guitar", "classical", "slow", "techno", "strings", "drums", "electronic", "rock", "fast", "piano", "ambient", "beat", "violin", "vocal", "synth", "female", "indian", "opera", "male", "singing", "vocals", "no vocals", "harpsichord", "loud", "quiet", "flute", "woman", "male vocal", "no vocal", "pop", "soft", "sitar", "solo", "man", "classic", "choir", "voice", "new age", "dance", "male voice", "female vocal", "beats", "harp", "cello", "no voice", "weird", "country", "metal", "female voice", "choral"}
+
+var MSD_LABELS = []string{"rock","pop","alternative","indie","electronic","female vocalists","dance","00s","alternative rock","jazz","beautiful","metal","chillout","male vocalists","classic rock","soul","indie rock","Mellow","electronica","80s","folk","90s","chill","instrumental","punk","oldies","blues","hard rock","ambient","acoustic","experimental","female vocalist","guitar","Hip-Hop","70s","party","country","easy listening","sexy","catchy","funk","electro","heavy metal","Progressive rock","60s","rnb","indie pop","sad","House","happy"}

@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/gcottom/audiometa/v3"
+	"github.com/gcottom/echodaemon/config"
 	"github.com/gcottom/echodaemon/internal"
 	"github.com/gcottom/echodaemon/logger"
 	"github.com/gcottom/retry"
@@ -34,17 +35,23 @@ func (s *Service) AddMeta(ctx context.Context, id string, filepath string) ([]by
 	}
 	s.GenreLimiter <- struct{}{}
 	logger.InfoC(ctx, "starting genre identification", slog.String("id", id))
-	res, err := internal.OSExecuteFindJSONStart(ctx, "./genre_service_bin", filepath)
-	if err != nil {
-		logger.ErrorC(ctx, "failed to add meta", slog.Any("error", err))
+	def := "Electronic"
+	if config.AppConfig != nil && strings.TrimSpace(config.AppConfig.DefaultGenre) != "" {
+		def = config.AppConfig.DefaultGenre
 	}
-	var genreRes GenreResponse
-	if err = json.Unmarshal(res, &genreRes); err != nil {
-		logger.ErrorC(ctx, "failed to unmarshal genre response", slog.Any("error", err))
-	}
-	logger.InfoC(ctx, "genre identification complete", slog.String("id", id), slog.String("genre", genreRes.Genre))
+	genre := def
+		if s.Engine != nil {
+			if res, err := s.Engine.Classify(ctx, filepath, 5); err == nil && strings.TrimSpace(res.Genre) != "" {
+				genre = res.Genre
+			} else if err != nil {
+				logger.ErrorC(ctx, "genre classification failed; using default", slog.String("file", filepath), slog.Any("error", err))
+			}
+		} else {
+			logger.ErrorC(ctx, "genre engine not initialized; using default")
+		}
+	logger.InfoC(ctx, "genre identification complete", slog.String("id", id), slog.String("genre", genre))
 	<-s.GenreLimiter
-	trackMeta.Genre = genreRes.Genre
+	trackMeta.Genre = genre
 	out := new(bytes.Buffer)
 
 	f, err := os.Open(filepath)
