@@ -5,6 +5,9 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 var wordSplit = regexp.MustCompile(`[\s._\-\[\]\(\)/]+`)
@@ -57,5 +60,5 @@ func guessFromPath(path string) string {
 }
 
 func titleCase(s string) string {
-	return strings.Title(strings.ToLower(s))
+	return cases.Title(language.Und).String(strings.ToLower(s))
 }

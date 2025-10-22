@@ -136,22 +136,3 @@ func initLibraryMap(ctx context.Context, libMap *sync.Map, musicDir string) {
 	}
 	logger.InfoC(ctx, "library map initialized", slog.Int("size", count))
 }
-
-// validateSamples classifies audio files under dir and logs the results. Enabled by env var.
-func validateSamples(ctx context.Context, eng genreengine.Engine, dir string) {
-	_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return nil
-		}
-		ext := strings.ToLower(filepath.Ext(path))
-		if ext == ".mp3" || ext == ".wav" || ext == ".flac" || ext == ".m4a" || ext == ".ogg" {
-			res, err := eng.Classify(ctx, path, 5)
-			if err != nil {
-				logger.ErrorC(ctx, "validation classify failed", slog.String("file", filepath.Base(path)), slog.Any("error", err))
-			} else {
-				logger.InfoC(ctx, "validation classify result", slog.String("file", filepath.Base(path)), slog.String("genre", res.Genre))
-			}
-		}
-		return nil
-	})
-}
