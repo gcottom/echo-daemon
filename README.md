@@ -14,13 +14,13 @@ You are responsible for complying with all applicable terms of service and copyr
 	•	Parses YouTube UMP (Unified Media Player) format responses to extract clean .webm audio  
 	•	Converts WEBM → MP3 automatically via FFmpeg  
 	•	Metadata Enrichment: Queries the YouTube API and Spotify API to fetch artist, title, album, and artwork  
-	•	Genre Classification: Uses a Python ML model to infer track genre  
+	•	Genre Classification: Uses ONXX Runtime models to infer track genre  
 	•	Automatic Tagging: Embeds metadata into the final MP3 and saves it to disk  
 	•	Passive or On-Demand Modes: Works both while streaming or through manual track requests  
 
 
 🧩 Architecture Overview  
-Chrome Extension  ->  Echo Daemon Backend (Go)  ->  FFmpeg  ->  YouTube API For Base/Fallback Metadata (Python) -> Spotify API For Complete Metadata (Go)  ->  ML Genre Identifier (Python) -> ID3 Tagger  ->  Enriched MP3 Audio
+Chrome Extension  ->  Echo Daemon Backend  ->  FFmpeg  ->  YouTube API For Base/Fallback Metadata  ->  Spotify API For Complete Metadata  ->  ONXX Genre Identifier -> ID3 Tagger  ->  Enriched MP3 Audio
 
 
 ⚙️ Setup & Usage  
