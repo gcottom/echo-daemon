@@ -1,5 +1,3 @@
-//go:build onnx
-
 package genreengine
 
 import (
@@ -31,11 +29,9 @@ type ONNXEngine struct {
 	so       *onnx.SessionOptions
 }
 
-var onnxDebug = os.Getenv("ECHO_ONNX_DEBUG") != ""
-
 // NewONNXEngine attempts to initialize ONNX Runtime and load any available models
 // from opt.ModelDir. Callers should be prepared to fall back if initialization fails.
-func NewONNXEngine(opt Options) (*ONNXEngine, error) {
+func NewONNXEngine(ctx context.Context, opt Options) (*ONNXEngine, error) {
 	// Ensure model dir exists
 	if stat, err := os.Stat(opt.ModelDir); err != nil || !stat.IsDir() {
 		return nil, fmt.Errorf("model dir not found: %s", opt.ModelDir)
@@ -44,8 +40,6 @@ func NewONNXEngine(opt Options) (*ONNXEngine, error) {
 	// Ensure the shared library can be located; best-effort path set for Docker image layout.
 	const ortLibPath = "/usr/local/lib/libonnxruntime.so"
 	onnx.SetSharedLibraryPath(ortLibPath)
-	// Log expected ORT C API version to avoid confusion between Go binding version and ORT library version.
-	slog.Info("onnx initializing runtime", slog.String("lib", ortLibPath), slog.String("expected_c_api", "22"), slog.String("note", "Go module github.com/yalue/onnxruntime_go v1.21.0 expects ORT C API 22 (onnxruntime 1.22.x)"))
 	if err := onnx.InitializeEnvironment(); err != nil {
 		return nil, fmt.Errorf("failed to init onnxruntime env: %w (ensure libonnxruntime.so is v1.22.x exposing C API 22 to match onnxruntime_go v1.21.0)", err)
 	}
@@ -56,9 +50,9 @@ func NewONNXEngine(opt Options) (*ONNXEngine, error) {
 		p := filepath.Join(opt.ModelDir, m)
 		if _, err := os.Stat(p); err == nil {
 			// Determine the number of classes for the model
-			nClasses := len(MSD_LABELS)
+			nClasses := len(MsdLabels)
 			if strings.Contains(m, "MTT") {
-				nClasses = len(MTT_LABELS)
+				nClasses = len(MttLabels)
 			}
 			// Choose candidate frame lengths to handle exporter/library differences
 			base := threeSecondFrames()
@@ -80,26 +74,26 @@ func NewONNXEngine(opt Options) (*ONNXEngine, error) {
 				// Create example tensors for this candidate frame length
 				inTmp, err := onnx.NewTensor[float32]([]int64{1, int64(nf), int64(NumMels)}, make([]float32, nf*NumMels))
 				if err != nil {
-					slog.Warn("onnx failed to create example input tensor", slog.String("model", p), slog.Int("nFrames", nf), slog.Any("error", err))
+					logger.WarnC(ctx, "onnx failed to create example input tensor", slog.String("model", p), slog.Int("nFrames", nf), slog.Any("error", err))
 					continue
 				}
 				outTmp, err := onnx.NewTensor[float32]([]int64{1, int64(nClasses)}, make([]float32, nClasses))
 				if err != nil {
-					slog.Warn("onnx failed to create example output tensor", slog.String("model", p), slog.Int("nFrames", nf), slog.Any("error", err))
-					inTmp.Destroy()
+					logger.WarnC(ctx, "onnx failed to create example output tensor", slog.String("model", p), slog.Int("nFrames", nf), slog.Any("error", err))
+					_ = inTmp.Destroy()
 					continue
 				}
 				// Try IO name pairs for this frame length
 				for _, pair := range tryPairs {
 					s, sErr := onnx.NewSession[float32](p, []string{pair[0]}, []string{pair[1]}, []*onnx.Tensor[float32]{inTmp}, []*onnx.Tensor[float32]{outTmp})
 					if sErr != nil {
-						slog.Warn("onnx session create failed for IO names", slog.String("model", p), slog.String("input", pair[0]), slog.String("output", pair[1]), slog.Int("nFrames", nf), slog.Any("error", sErr))
+						logger.WarnC(ctx, "onnx session create failed for IO names", slog.String("model", p), slog.String("input", pair[0]), slog.String("output", pair[1]), slog.Int("nFrames", nf), slog.Any("error", sErr))
 						continue
 					}
 					// Validate by attempting a dry run with zeroed tensors
 					if err := s.Run(); err != nil {
-						slog.Warn("onnx session validation run failed", slog.String("model", p), slog.String("input", pair[0]), slog.String("output", pair[1]), slog.Int("nFrames", nf), slog.Any("error", err))
-						s.Destroy()
+						logger.WarnC(ctx, "onnx session validation run failed", slog.String("model", p), slog.String("input", pair[0]), slog.String("output", pair[1]), slog.Int("nFrames", nf), slog.Any("error", err))
+						_ = s.Destroy()
 						continue
 					}
 					// Success for this nf and IO pair
@@ -107,28 +101,26 @@ func NewONNXEngine(opt Options) (*ONNXEngine, error) {
 					inName, outName = pair[0], pair[1]
 					inEx, outEx = inTmp, outTmp
 					usedFrames = nf
-					slog.Info("onnx session created", slog.String("model", p), slog.String("input", inName), slog.String("output", outName), slog.Int("nFrames", nf), slog.Int("nMels", NumMels), slog.Int("nClasses", nClasses))
 					break
 				}
 				if sess != nil {
 					break
 				}
 				// Cleanup and try next nf
-				inTmp.Destroy()
-				outTmp.Destroy()
+				_ = inTmp.Destroy()
+				_ = outTmp.Destroy()
 			}
 			if sess == nil {
-				slog.Warn("failed to load model with any known IO names; skipping", slog.String("model", p))
+				logger.WarnC(ctx, "failed to load model with any known IO names; skipping", slog.String("model", p))
 				continue
 			}
 			e.sessions[m] = &onnxSession{sess: sess, inName: inName, outName: outName, inT: inEx, outT: outEx, frames: usedFrames, nClasses: nClasses}
 		} else {
-			// Always log when a model file is missing so operators know why inference might fall back.
-			slog.Warn("onnx model file not found", slog.String("model", p))
+			logger.WarnC(ctx, "onnx model file not found", slog.String("model", p))
 		}
 	}
 	if len(e.sessions) == 0 {
-		onnx.DestroyEnvironment()
+		_ = onnx.DestroyEnvironment()
 		return nil, fmt.Errorf("no ONNX models found in %s", opt.ModelDir)
 	}
 	return e, nil
@@ -141,16 +133,16 @@ func (e *ONNXEngine) Close() {
 			continue
 		}
 		if s.inT != nil {
-			s.inT.Destroy()
+			_ = s.inT.Destroy()
 		}
 		if s.outT != nil {
-			s.outT.Destroy()
+			_ = s.outT.Destroy()
 		}
 		if s.sess != nil {
-			s.sess.Destroy()
+			_ = s.sess.Destroy()
 		}
 	}
-	onnx.DestroyEnvironment()
+	_ = onnx.DestroyEnvironment()
 }
 
 // Classify decodes audio, computes a mel-spectrogram, runs ONNX inference across available
@@ -171,9 +163,6 @@ func (e *ONNXEngine) Classify(ctx context.Context, filePath string, topN int) (R
 	if len(patches) == 0 {
 		return Result{}, fmt.Errorf("insufficient audio for inference")
 	}
-	if onnxDebug {
-		logger.InfoC(ctx, "onnx classify dsp summary", slog.Int("frames", len(mel)), slog.Int("patches", len(patches)), slog.Int("nFramesPerPatch", nFrames), slog.Int("nMels", NumMels))
-	}
 	// Ensure we actually have sessions to run
 	if len(e.sessions) == 0 {
 		return Result{}, fmt.Errorf("no ONNX sessions loaded")
@@ -188,33 +177,52 @@ func (e *ONNXEngine) Classify(ctx context.Context, filePath string, topN int) (R
 		s, ok := e.sessions[name]
 		if !ok {
 			// Always log when a model wasn't loaded during init
-			slog.Warn("onnx model not loaded; skipping", slog.String("model", name))
+			logger.WarnC(ctx, "onnx model not loaded; skipping", slog.String("model", name))
 			modelErrs = append(modelErrs, fmt.Sprintf("%s:not_loaded", name))
 			return
 		}
 		probs, err := averageProbsOverPatches(ctx, s, patches)
 		if err != nil {
 			// Log per-model inference failure
-			slog.Warn("onnx model inference failed", slog.String("model", name), slog.Any("error", err))
+			logger.ErrorC(ctx, "onnx model inference failed", slog.String("model", name), slog.Any("error", err))
 			modelErrs = append(modelErrs, fmt.Sprintf("%s:%v", name, err))
 			return
 		}
 		anyOK = true
-		lists = append(lists, topTagsFromProbs(labels, probs, topN))
+		topTags := topTagsFromProbs(labels, probs, topN)
+
+		// Log the model's top predictions with their probabilities
+		topTagsWithProbs := make([]string, len(topTags))
+		for i, tag := range topTags {
+			// Find the probability for this tag
+			var prob float32
+			for j, label := range labels {
+				if label == tag && j < len(probs) {
+					prob = probs[j]
+					break
+				}
+			}
+			topTagsWithProbs[i] = fmt.Sprintf("%s(%.3f)", tag, prob)
+		}
+		logger.InfoC(ctx, "onnx model classification result",
+			slog.String("model", name),
+			slog.String("predictions", strings.Join(topTagsWithProbs, ", ")))
+
+		lists = append(lists, topTags)
 	}
 
 	// Prefer musicnn models; include VGG when available
-	runModel("MTT_musicnn.onnx", MTT_LABELS)
-	runModel("MSD_musicnn.onnx", MSD_LABELS)
-	runModel("MTT_vgg.onnx", MTT_LABELS)
-	runModel("MSD_vgg.onnx", MSD_LABELS)
+	runModel("MTT_musicnn.onnx", MttLabels)
+	runModel("MSD_musicnn.onnx", MsdLabels)
+	runModel("MTT_vgg.onnx", MttLabels)
+	runModel("MSD_vgg.onnx", MsdLabels)
 
 	if !anyOK || len(lists) == 0 {
 		// Return an error so callers can log and fall back to default
 		return Result{}, fmt.Errorf("onnx inference failed for all models: %s", strings.Join(modelErrs, "; "))
 	}
 	// Aggregate ranked tags and pick a final genre
-	scores := aggregateTagScores(lists...)
+	scores := aggregateTagScores(ctx, lists...)
 	genre := pickGenre(scores, e.opt.DefaultGenre)
 	return Result{Genre: genre}, nil
 }
@@ -253,9 +261,7 @@ func averageProbsOverPatches(ctx context.Context, s *onnxSession, patches [][][]
 	for i, p := range patches {
 		out, err := runOnce(ctx, s, p)
 		if err != nil {
-			if onnxDebug {
-				logger.ErrorC(ctx, "onnx patch inference failed", slog.Int("patch_index", i), slog.Any("error", err))
-			}
+			logger.ErrorC(ctx, "onnx patch inference failed", slog.Int("patch_index", i), slog.Any("error", err))
 			continue
 		}
 		// out length may differ; accumulate up to min length

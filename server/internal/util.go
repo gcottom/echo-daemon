@@ -48,22 +48,6 @@ func ConvertFile(ctx context.Context, b []byte) ([]byte, error) {
 	return stdout.Bytes(), nil
 }
 
-func OSExecuteFindJSONStart(ctx context.Context, command string, args ...string) ([]byte, error) {
-	cmd := exec.Command(command, args...)
-	var out bytes.Buffer
-	var stderr bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &stderr
-	err := cmd.Run()
-	if err != nil {
-		errWrap := fmt.Errorf("exec failed: %w; stderr: %s", err, stderr.String())
-		logger.ErrorC(ctx, "failed to execute command", slog.Any("error", errWrap))
-		return nil, errWrap
-	}
-	i := bytes.LastIndex(out.Bytes(), []byte("{"))
-	return out.Bytes()[i:], nil
-}
-
 func SanitizePath(path string) string {
 	invalidChars := regexp.MustCompile(`[<>:"/\\|?*\x00-\x1F]`)
 	components := strings.Split(filepath.ToSlash(path), "/")

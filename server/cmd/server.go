@@ -15,6 +15,7 @@ import (
 	"github.com/gcottom/echodaemon/config"
 	"github.com/gcottom/echodaemon/handlers"
 	"github.com/gcottom/echodaemon/internal/genreengine"
+	"github.com/gcottom/echodaemon/internal/ytmusic"
 	"github.com/gcottom/echodaemon/logger"
 	"github.com/gcottom/echodaemon/services/downloader"
 	"github.com/gcottom/echodaemon/services/meta"
@@ -51,23 +52,22 @@ func RunServer() error {
 		DefaultGenre: defGenre,
 		WorkDir:      "/tmp",
 	}
-	eng, engErr := genreengine.NewPreferredEngine(engOpt)
+	logger.InfoC(ctx, "initializing genre engine...")
+	eng, engErr := genreengine.NewPreferredEngine(ctx, engOpt)
 	if engErr != nil {
 		logger.ErrorC(ctx, "genre engine initialization: falling back to heuristic", slog.Any("error", engErr))
 	} else {
 		logger.InfoC(ctx, "genre engine initialized")
-		// Optional startup validation: classify any audio files in /app/samples when enabled
-		if os.Getenv("VALIDATE_GENRE_SAMPLES") != "" {
-			validateSamples(ctx, eng, "/app/samples")
-		}
 	}
-	metaService := &meta.Service{SpotifyConfig: &clientcredentials.Config{
-		ClientID:     cfg.SpotifyClientID,
-		ClientSecret: cfg.SpotifyClientSecret,
-		TokenURL:     spotifyauth.TokenURL,
-	},
-		GenreLimiter: make(chan struct{}, 1),
-		Engine:       eng,
+	metaService := &meta.Service{
+		SpotifyConfig: &clientcredentials.Config{
+			ClientID:     cfg.SpotifyClientID,
+			ClientSecret: cfg.SpotifyClientSecret,
+			TokenURL:     spotifyauth.TokenURL,
+		},
+		GenreLimiter:  make(chan struct{}, 1),
+		Engine:        eng,
+		YTMusicClient: ytmusic.NewClient(),
 	}
 
 	libMap := new(sync.Map)

@@ -2,6 +2,7 @@ package meta
 
 import (
 	"github.com/gcottom/echodaemon/internal/genreengine"
+	"github.com/gcottom/echodaemon/internal/ytmusic"
 	"golang.org/x/oauth2/clientcredentials"
 )
 
@@ -9,6 +10,7 @@ type Service struct {
 	SpotifyConfig *clientcredentials.Config
 	GenreLimiter  chan struct{}
 	Engine        genreengine.Engine
+	YTMusicClient *ytmusic.Client
 }
 
 type TrackMeta struct {

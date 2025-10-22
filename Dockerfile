@@ -1,5 +1,4 @@
 # Multi-stage Dockerfile for echo-daemon with ONNX Runtime enabled by default
-# Default target builds the server with ONNX support and includes Python-based helpers.
 
 # ========== Builder (Go + ONNX Runtime dev) ==========
 FROM golang:latest AS builder
@@ -32,17 +31,15 @@ RUN set -eux; \
 WORKDIR /app/server/cmd
 RUN CGO_ENABLED=1 go build -tags onnx -o server .
 
-# ========== Runtime (Python + FFmpeg + Chromium + ORT) ==========
-FROM python:3.10.14-bookworm
-RUN apt-get update && apt-get install -y \
-    ca-certificates curl gnupg ffmpeg \
+# ========== Runtime (Debian + FFmpeg + Chromium + ORT) ==========
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates curl ffmpeg \
     chromium \
     fonts-liberation fonts-noto-color-emoji \
     libnss3 libasound2 libgbm1 libx11-6 libx11-xcb1 libxcomposite1 \
     libxdamage1 libxrandr2 libgtk-3-0 libxss1 libxtst6 xdg-utils \
  && rm -rf /var/lib/apt/lists/*
-ENV LANG=C.UTF-8
-ENV LC_ALL=C.UTF-8
 # ONNX Runtime version (used in runtime stage)
 ARG ORT_VERSION=1.22.0
 # Install ORT runtime libs to match architecture
@@ -62,18 +59,9 @@ RUN set -eux; \
 ENV LD_LIBRARY_PATH=/usr/local/lib:${LD_LIBRARY_PATH}
 
 WORKDIR /app
-# Copy server
+# Copy server binary
 COPY --from=builder /app/server/cmd/server /app/server
-# Keep Python music_api_bin build only
-COPY ./python /app/python
-# Install music-api deps and also the conversion toolchain for musicnn -> ONNX
-RUN pip3 install -r /app/python/music-api/requirements.txt && \
-    pip3 install -r /app/python/scripts/requirements.txt
-# Convert and vendor ONNX models into /app/models during build
-ENV MUSICNN_ONNX_OUT=/app/models
-RUN python3 /app/python/scripts/convert_musicnn_to_onnx.py || true
-# Build the remaining Python binary
-RUN pip3 install pyinstaller && \
-    pyinstaller --clean --onefile /app/python/music-api/music-api.py --name music_api_bin --distpath /app
+# Copy pre-built ONNX models directly
+COPY ./models/*.onnx /app/models/
 ENV ECHO_ONNX_DEBUG=1
 ENTRYPOINT ["./server"]

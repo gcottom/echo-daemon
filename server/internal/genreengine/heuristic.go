@@ -22,9 +22,9 @@ func NewHeuristicEngine(opt Options) *HeuristicEngine {
 
 func (e *HeuristicEngine) Classify(ctx context.Context, filePath string, topN int) (Result, error) {
 	g := guessFromPath(filePath)
-	if g == "" {
+	/*if g == "" {
 		g = e.opt.DefaultGenre
-	}
+	}*/
 	return Result{Genre: titleCase(g)}, nil
 }
 

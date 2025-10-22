@@ -1,5 +1,3 @@
-//go:build onnx
-
 package genreengine
 
 import (
@@ -195,6 +193,7 @@ func melSpectrogram(x []float32) [][]float32 {
 
 // threeSecondFrames computes the number of spectrogram frames for 3.0s according to librosa.time_to_frames + 1.
 func threeSecondFrames() int {
-	// librosa: n = 1 + int(round(t*sr/hop))
-	return 1 + int(math.Round(3.0*float64(SampleRate)/float64(FFTHop)))
+	// librosa.time_to_frames returns int(round(t*sr/hop)), then we add 1
+	// This matches: librosa.time_to_frames(3.0, sr=16000, hop_length=256) + 1 = 187
+	return int(math.Round(3.0*float64(SampleRate)/float64(FFTHop))) + 1
 }
