@@ -204,10 +204,6 @@ func (e *ONNXEngine) Classify(ctx context.Context, filePath string, topN int) (R
 			}
 			topTagsWithProbs[i] = fmt.Sprintf("%s(%.3f)", tag, prob)
 		}
-		logger.InfoC(ctx, "onnx model classification result",
-			slog.String("model", name),
-			slog.String("predictions", strings.Join(topTagsWithProbs, ", ")))
-
 		lists = append(lists, topTags)
 	}
 
