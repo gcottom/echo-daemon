@@ -41,7 +41,7 @@ func NewONNXEngine(ctx context.Context, opt Options) (*ONNXEngine, error) {
 	const ortLibPath = "/usr/local/lib/libonnxruntime.so"
 	onnx.SetSharedLibraryPath(ortLibPath)
 	if err := onnx.InitializeEnvironment(); err != nil {
-		return nil, fmt.Errorf("failed to init onnxruntime env: %w (ensure libonnxruntime.so is v1.22.x exposing C API 22 to match onnxruntime_go v1.21.0)", err)
+		return nil, fmt.Errorf("failed to init onnxruntime env: %w (ensure libonnxruntime.so is installed and compatible with the onnxruntime_go binding; see documentation for version requirements)", err)
 	}
 
 	e := &ONNXEngine{opt: opt, sessions: map[string]*onnxSession{}}
