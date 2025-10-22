@@ -31,6 +31,7 @@ type Config struct {
 	MusicDir            string `yaml:"music_dir"`
 	SpotifyClientID     string `yaml:"spotify_client_id"`
 	SpotifyClientSecret string `yaml:"spotify_client_secret"`
+	DefaultGenre        string `yaml:"default_genre"`
 }
 
 var AppConfig *Config

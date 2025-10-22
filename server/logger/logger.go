@@ -33,6 +33,10 @@ func InfoC(ctx context.Context, msg string, args ...any) {
 	FromContext(ctx).Info(msg, args...)
 }
 
+func WarnC(ctx context.Context, msg string, args ...any) {
+	FromContext(ctx).Warn(msg, args...)
+}
+
 func ErrorC(ctx context.Context, msg string, args ...any) {
 	FromContext(ctx).Error(msg, args...)
 }

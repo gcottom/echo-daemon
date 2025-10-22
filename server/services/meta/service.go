@@ -3,7 +3,6 @@ package meta
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"image"
 	"log/slog"
@@ -13,7 +12,7 @@ import (
 	"strings"
 
 	"github.com/gcottom/audiometa/v3"
-	"github.com/gcottom/echodaemon/internal"
+	"github.com/gcottom/echodaemon/config"
 	"github.com/gcottom/echodaemon/logger"
 	"github.com/gcottom/retry"
 	"github.com/zmb3/spotify/v2"
@@ -34,17 +33,23 @@ func (s *Service) AddMeta(ctx context.Context, id string, filepath string) ([]by
 	}
 	s.GenreLimiter <- struct{}{}
 	logger.InfoC(ctx, "starting genre identification", slog.String("id", id))
-	res, err := internal.OSExecuteFindJSONStart(ctx, "./genre_service_bin", filepath)
-	if err != nil {
-		logger.ErrorC(ctx, "failed to add meta", slog.Any("error", err))
+	def := "Electronic"
+	if config.AppConfig != nil && strings.TrimSpace(config.AppConfig.DefaultGenre) != "" {
+		def = config.AppConfig.DefaultGenre
 	}
-	var genreRes GenreResponse
-	if err = json.Unmarshal(res, &genreRes); err != nil {
-		logger.ErrorC(ctx, "failed to unmarshal genre response", slog.Any("error", err))
+	genre := def
+	if s.Engine != nil {
+		if res, err := s.Engine.Classify(ctx, filepath, 5); err == nil && strings.TrimSpace(res.Genre) != "" {
+			genre = res.Genre
+		} else if err != nil {
+			logger.ErrorC(ctx, "genre classification failed; using default", slog.String("file", filepath), slog.Any("error", err))
+		}
+	} else {
+		logger.ErrorC(ctx, "genre engine not initialized; using default")
 	}
-	logger.InfoC(ctx, "genre identification complete", slog.String("id", id), slog.String("genre", genreRes.Genre))
+	logger.InfoC(ctx, "genre identification complete", slog.String("id", id), slog.String("genre", genre))
 	<-s.GenreLimiter
-	trackMeta.Genre = genreRes.Genre
+	trackMeta.Genre = genre
 	out := new(bytes.Buffer)
 
 	f, err := os.Open(filepath)
@@ -113,24 +118,19 @@ func (s *Service) GetBestMeta(ctx context.Context, id string) (*TrackMeta, error
 
 func (s *Service) GetYTMetaFromID(ctx context.Context, id string) (TrackMeta, error) {
 	logger.InfoC(ctx, "getting meta via yt api", slog.String("id", id))
-	// If the id begins with '-', insert '--' to terminate option parsing for argparse
-	args := []string{"meta"}
-	if strings.HasPrefix(id, "-") {
-		args = append(args, "--", id)
-	} else {
-		args = append(args, id)
-	}
-	res, err := internal.OSExecuteFindJSONStart(ctx, "./music_api_bin", args...)
+
+	// Use integrated YouTube Music client instead of external process
+	meta, err := s.YTMusicClient.GetVideoMetadata(ctx, id)
 	if err != nil {
-		logger.ErrorC(ctx, "failed to get yt meta", slog.Any("error", err), res)
+		logger.ErrorC(ctx, "failed to get yt meta", slog.Any("error", err))
 		return TrackMeta{}, err
 	}
-	var meta YTMMetaResponse
-	if err = json.Unmarshal(res, &meta); err != nil {
-		logger.ErrorC(ctx, "failed to unmarshal meta response", slog.Any("error", err))
-		return TrackMeta{}, err
+
+	outmeta := TrackMeta{
+		Artist:      meta.Author,
+		Title:       meta.Title,
+		CoverArtURL: meta.Image,
 	}
-	outmeta := TrackMeta{Artist: meta.Author, Title: meta.Title, CoverArtURL: meta.Image}
 	return outmeta, nil
 }
 
@@ -283,24 +283,14 @@ func (s *Service) GetBestMetaMatch(ctx context.Context, trackMeta TrackMeta, spo
 }
 
 func (s *Service) GetPlaylistEntries(ctx context.Context, playlistID string) ([]string, error) {
-	// Shield playlist IDs that might begin with '-' from argparse option parsing
-	pargs := []string{"playlist"}
-	if strings.HasPrefix(playlistID, "-") {
-		pargs = append(pargs, "--", playlistID)
-	} else {
-		pargs = append(pargs, playlistID)
-	}
-	res, err := internal.OSExecuteFindJSONStart(ctx, "./music_api_bin", pargs...)
+	logger.InfoC(ctx, "getting playlist entries via yt api", slog.String("playlistID", playlistID))
+	playlist, err := s.YTMusicClient.GetPlaylist(ctx, playlistID)
 	if err != nil {
 		logger.ErrorC(ctx, "failed to get playlist entries", slog.Any("error", err))
 		return nil, err
 	}
-	var playlistEntries PlaylistResponse
-	if err = json.Unmarshal(res, &playlistEntries); err != nil {
-		logger.ErrorC(ctx, "failed to unmarshal playlist entries", slog.Any("error", err))
-		return nil, err
-	}
-	return playlistEntries.Tracks, nil
+
+	return playlist.Tracks, nil
 }
 
 func (s *Service) SanitizeString(str string) string {
