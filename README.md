@@ -60,7 +60,10 @@ The default Compose build uses the heuristic genre engine without an ONNX Runtim
 release download. The optional ONNX build does not change the download or save
 pipeline.
 
-To opt into native inference, set ENABLE_ONNX=1 before building. ORT_VERSION
-overrides the default 1.22.0; use an official ONNX Runtime release with a
-published Linux archive for your architecture and compatible C API. Missing
-opt-in artifacts fail the build rather than silently changing modes.
+To opt into native CPU inference, build with ENABLE_ONNX=1. Docker compiles
+the server using Go's onnx tag and stages the native libraries from Microsoft's
+hash-verified ONNX Runtime 1.31.1 wheels for Linux amd64 and arm64. The Go
+binding uses C API 31; ORT_VERSION must match the bundled pin for ONNX builds.
+Python and GPU runtime dependencies are not installed in the final image.
+Startup logs identify which genre engine actually initialized. Check those logs
+as well as /healthz before switching a live deployment.

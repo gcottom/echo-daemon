@@ -15,7 +15,7 @@ import (
 )
 
 type onnxSession struct {
-	sess     *onnx.Session[float32]
+	sess     *onnx.AdvancedSession
 	inName   string
 	outName  string
 	inT      *onnx.Tensor[float32]
@@ -47,6 +47,17 @@ func NewONNXEngine(ctx context.Context, opt Options) (*ONNXEngine, error) {
 	}
 
 	e := &ONNXEngine{opt: opt, sessions: map[string]*onnxSession{}}
+	options, err := onnx.NewSessionOptions()
+
+	if err != nil {
+		_ = onnx.DestroyEnvironment()
+		return nil, fmt.Errorf("create ONNX session options: %w", err)
+	}
+	defer options.Destroy()
+	if err := options.SetIntraOpNumThreads(2); err != nil {
+		_ = onnx.DestroyEnvironment()
+		return nil, fmt.Errorf("set ONNX thread count: %w", err)
+	}
 	models := []string{"MSD_musicnn.onnx", "MSD_vgg.onnx", "MTT_musicnn.onnx", "MTT_vgg.onnx"}
 	for _, m := range models {
 		p := filepath.Join(opt.ModelDir, m)
@@ -65,7 +76,7 @@ func NewONNXEngine(ctx context.Context, opt Options) (*ONNXEngine, error) {
 				frameCandidates = []int{base, base - 1, base - 2}
 			}
 			tryPairs := [][2]string{{"model/input:0", "model/prob:0"}, {"model_input", "model_prob"}}
-			var sess *onnx.Session[float32]
+			var sess *onnx.AdvancedSession
 			var inName, outName string
 			var inEx, outEx *onnx.Tensor[float32]
 			var usedFrames int
@@ -87,7 +98,7 @@ func NewONNXEngine(ctx context.Context, opt Options) (*ONNXEngine, error) {
 				}
 				// Try IO name pairs for this frame length
 				for _, pair := range tryPairs {
-					s, sErr := onnx.NewSession[float32](p, []string{pair[0]}, []string{pair[1]}, []*onnx.Tensor[float32]{inTmp}, []*onnx.Tensor[float32]{outTmp})
+					s, sErr := onnx.NewAdvancedSession(p, []string{pair[0]}, []string{pair[1]}, []onnx.Value{inTmp}, []onnx.Value{outTmp}, options)
 					if sErr != nil {
 						logger.WarnC(ctx, "onnx session create failed for IO names", slog.String("model", p), slog.String("input", pair[0]), slog.String("output", pair[1]), slog.Int("nFrames", nf), slog.Any("error", sErr))
 						continue

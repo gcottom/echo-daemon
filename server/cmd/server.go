@@ -66,7 +66,7 @@ func RunServer() error {
 	if engErr != nil {
 		logger.ErrorC(ctx, "genre engine initialization: falling back to heuristic", slog.Any("error", engErr))
 	} else {
-		logger.InfoC(ctx, "genre engine initialized")
+		logger.InfoC(ctx, "genre engine initialized", slog.String("engine", fmt.Sprintf("%T", eng)))
 	}
 	metaService := &meta.Service{
 		SpotifyConfig: &clientcredentials.Config{

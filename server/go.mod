@@ -8,7 +8,7 @@ require (
 	github.com/gcottom/youtube-go v0.1.0
 	github.com/gin-contrib/cors v1.7.6
 	github.com/gin-gonic/gin v1.11.0
-	github.com/yalue/onnxruntime_go v1.21.0
+	github.com/yalue/onnxruntime_go v1.38.0
 	github.com/zmb3/spotify/v2 v2.4.3
 	golang.org/x/oauth2 v0.31.0
 	golang.org/x/text v0.29.0
