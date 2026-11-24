@@ -32,6 +32,24 @@ RUN set -eu; \
       *) echo "ENABLE_ONNX must be 0 or 1" >&2; exit 1 ;; \
     esac
 
+# Keep the default image model-free. Only opt-in ONNX builds fetch this exact
+# release bundle, which includes the notice that must accompany the models.
+RUN set -eu; \
+    mkdir -p /model-pack; \
+    if [ "$ENABLE_ONNX" = 1 ]; then \
+      url='https://github.com/gcottom/echo-daemon/releases/download/musicnn-onnx-v1/musicnn-onnx-v1.zip'; \
+      sha='232fe50791d369df00e1bb9e07f7131d7c45b55e8f9e06c4c847c84178dff74e'; \
+      curl --proto '=https' --proto-redir '=https' --fail --silent --show-error --location --retry 2 --max-time 120 "$url" -o /tmp/musicnn.zip; \
+      printf '%s  %s\n' "$sha" /tmp/musicnn.zip | sha256sum -c -; \
+      unzip -j /tmp/musicnn.zip \
+        models/MSD_musicnn.onnx models/MSD_vgg.onnx \
+        models/MTT_musicnn.onnx models/MTT_vgg.onnx \
+        models/LICENSE.musicnn models/README.md models/SHA256SUMS \
+        -d /model-pack; \
+      (cd /model-pack && sha256sum -c SHA256SUMS); \
+      rm /tmp/musicnn.zip; \
+    fi
+
 FROM debian:bookworm-slim AS runtime
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates curl ffmpeg libstdc++6 && rm -rf /var/lib/apt/lists/*
@@ -39,6 +57,5 @@ COPY --from=builder /ort-lib/ /usr/local/lib/
 RUN ldconfig
 WORKDIR /app
 COPY --from=builder /echo-server /app/server
-COPY ./models/*.onnx /app/models/
-COPY ./models/LICENSE.musicnn ./models/README.md ./models/SHA256SUMS /app/models/
+COPY --from=builder /model-pack/ /app/models/
 ENTRYPOINT ["./server"]

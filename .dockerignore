@@ -100,3 +100,6 @@ __MACOSX
 *.tgz
 *.bz2
 *.rar
+
+# Local model files; Docker uses the pinned release bundle.
+/models/*.onnx

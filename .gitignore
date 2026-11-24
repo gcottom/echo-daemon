@@ -19,3 +19,6 @@
 /music/
 /chrome/dist/
 /chrome/node_modules/
+
+# Optional models come from the public release.
+/models/*.onnx

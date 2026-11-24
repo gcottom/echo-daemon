@@ -1,5 +1,11 @@
 # EchoDaemon musicnn ONNX exports
 
+Download [musicnn-onnx-v1.zip](https://github.com/gcottom/echo-daemon/releases/download/musicnn-onnx-v1/musicnn-onnx-v1.zip)
+from the public release. The archive SHA-256 is
+**232fe50791d369df00e1bb9e07f7131d7c45b55e8f9e06c4c847c84178dff74e**.
+Docker's opt-in ONNX build imports this bundle automatically. For a native
+ONNX build, extract the archive and put its models and notice in /app/models.
+
 These ONNX exports were introduced in EchoDaemon commit `f85eee9`. They are
 format conversions of pre-trained [musicnn](https://github.com/jordipons/musicnn)
 models, not new training or original EchoDaemon model weights. The archived
