@@ -14,3 +14,8 @@
 /cleanup.sh
 /.air.toml
 /.air/build-errors.log
+
+/data/
+/music/
+/chrome/dist/
+/chrome/node_modules/

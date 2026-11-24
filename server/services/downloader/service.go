@@ -36,7 +36,7 @@ func (s *Service) ConvertFile(ctx context.Context, id string, data []byte) error
 		logger.ErrorC(ctx, "failed to convert file", slog.String("id", id), slog.Any("error", err))
 		return fmt.Errorf("failed to convert file: %w", err)
 	}
-	if err = os.Mkdir(config.AppConfig.TempDir, 0755); err != nil && !os.IsExist(err) {
+	if err = os.MkdirAll(config.AppConfig.TempDir, 0755); err != nil {
 		logger.ErrorC(ctx, "failed to create temp dir", slog.Any("error", err))
 		return fmt.Errorf("failed to create temp dir: %w", err)
 	}
@@ -46,6 +46,29 @@ func (s *Service) ConvertFile(ctx context.Context, id string, data []byte) error
 		return fmt.Errorf("failed to write file: %w", err)
 	}
 	return nil
+}
+
+// Use a separate temporary file for each job so simultaneous requests cannot
+// replace or clean up another job's input.
+func convertToTemporaryFile(ctx context.Context, data []byte) (string, error) {
+	converted, err := internal.ConvertFile(ctx, data)
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(config.AppConfig.TempDir, 0755); err != nil {
+		return "", err
+	}
+	f, err := os.CreateTemp(config.AppConfig.TempDir, "track-*.mp3")
+	if err != nil {
+		return "", err
+	}
+	_, writeErr := f.Write(converted)
+	closeErr := f.Close()
+	if err := errors.Join(writeErr, closeErr); err != nil {
+		_ = os.Remove(f.Name())
+		return "", err
+	}
+	return f.Name(), nil
 }
 
 func (s *Service) GetMeta(ctx context.Context, id string) ([]byte, error) {
@@ -59,27 +82,50 @@ func (s *Service) SaveFile(ctx context.Context, id string, data []byte) error {
 		logger.ErrorC(ctx, "failed to open tag", slog.String("id", id), slog.Any("error", err))
 		return fmt.Errorf("failed to open tag: %w", err)
 	}
-	if err = os.Mkdir(config.AppConfig.SaveDir, 0755); err != nil && !os.IsExist(err) {
+	if err = os.MkdirAll(config.AppConfig.SaveDir, 0755); err != nil {
 		logger.ErrorC(ctx, "failed to create save dir", slog.Any("error", err))
 		return fmt.Errorf("failed to create save dir: %w", err)
 	}
-	logger.InfoC(ctx, "checking if file already exists in library map", slog.String("key", tag.GetTitle()+" - "+tag.GetArtist()))
-	if _, ok := s.LibraryMap.Load(fmt.Sprintf("%s - %s", tag.GetTitle(), tag.GetArtist())); ok {
-		logger.InfoC(ctx, "file already exists in library, skipping", slog.String("id", id), slog.String("key", tag.GetTitle()+" - "+tag.GetArtist()))
-		return nil // File already exists in library map, skip saving
+	title, artist := strings.TrimSpace(tag.GetTitle()), strings.TrimSpace(tag.GetArtist())
+	if title == "" || artist == "" {
+		return errors.New("output requires a title and artist")
 	}
-	s.LibraryMap.Store(fmt.Sprintf("%s - %s", tag.GetTitle(), tag.GetArtist()), true)
-	savePath := fmt.Sprintf("%s - %s.%s", tag.GetArtist(), tag.GetTitle(), internal.FILEFORMAT)
-	savePath = SanitizeFilename(savePath)
-	savePath = filepath.Join(config.AppConfig.SaveDir, savePath)
-	logger.InfoC(ctx, "Saving file", slog.String("path", savePath), slog.String("id", id))
-	savePath = internal.SanitizePath(savePath)
-	if err = os.WriteFile(savePath, data, 0644); err != nil {
-		logger.ErrorC(ctx, "failed to write file", slog.String("id", id), slog.Any("error", err))
-		return fmt.Errorf("failed to write file: %w", err)
+	key := title + " - " + artist
+	s.saveMu.Lock()
+	defer s.saveMu.Unlock()
+	if s.LibraryMap != nil {
+		if _, ok := s.LibraryMap.Load(key); ok {
+			return nil
+		}
 	}
-	logger.InfoC(ctx, "File saved successfully", slog.String("path", savePath), slog.String("id", id))
+	name := SanitizeFilename(fmt.Sprintf("%s - %s.%s", artist, title, internal.FILEFORMAT))
+	savePath := filepath.Join(config.AppConfig.SaveDir, name)
+	if err := writeNewFile(savePath, data); err != nil {
+		return fmt.Errorf("save track: %w", err)
+	}
+	if s.LibraryMap != nil {
+		s.LibraryMap.Store(key, true)
+	}
+	logger.InfoC(ctx, "file saved successfully", slog.String("path", savePath), slog.String("id", id))
 	return nil
+}
+
+// Publish a complete output without overwriting an existing file. Staging in
+// the destination directory keeps both paths on the same filesystem.
+func writeNewFile(path string, data []byte) error {
+	f, err := os.CreateTemp(filepath.Dir(path), ".echo-partial-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(f.Name())
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return os.Link(f.Name(), path)
 }
 
 func SanitizeFilename(name string) string {
@@ -189,10 +235,14 @@ func (s *Service) Cleanup(ctx context.Context, id string) {
 	_ = os.Remove(fmt.Sprintf("%s/%s.%s", config.AppConfig.TempDir, id, internal.FILEFORMAT))
 }
 
+var ErrInvalidID = errors.New("invalid track or playlist ID")
+
+var validDownloadID = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
+
 func (s *Service) DownloadByID(ctx context.Context, id string) error {
 	logger.InfoC(ctx, "downloading by ID", slog.String("id", id))
-	if id == "" {
-		return fmt.Errorf("no track ID found")
+	if !validDownloadID.MatchString(id) {
+		return ErrInvalidID
 	}
 	if len(id) != 11 {
 		logger.InfoC(ctx, "playlist ID detected, attempting to download all tracks in playlist")
@@ -220,27 +270,24 @@ func (s *Service) DownloadByID(ctx context.Context, id string) error {
 	bod, err := ReplayCapture(ctx, *captureRequest, id)
 	if err != nil {
 		logger.ErrorC(ctx, "error replaying request", slog.Any("error", err))
-
+		return fmt.Errorf("audio fetch failed: %w", err)
 	}
-	if len(bod) < MinimumDownloadSize {
-		logger.InfoC(ctx, "replayed data too small, attempting to retry download with next request", slog.Int("length", len(bod)))
-		return nil
+	if len(bod) == 0 {
+		return errors.New("audio response contained no usable data")
 	}
 	logger.InfoC(ctx, "captured data length", slog.Int("length", len(bod)))
 
 	go func(id string, data []byte) {
 		ctx := context.WithValue(context.Background(), "id", id)
-		joinedData, err := internal.ConvertFile(ctx, data)
+		procCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+		defer cancel()
+		path, err := convertToTemporaryFile(procCtx, data)
 		if err != nil {
-			logger.ErrorC(ctx, "error joining data for captured audio", slog.Any("error", err))
+			logger.ErrorC(ctx, "error converting captured audio", slog.Any("error", err))
 			return
 		}
-		savePath := fmt.Sprintf("%s/%s.%s", config.AppConfig.TempDir, id, internal.FILEFORMAT)
-		if err = os.WriteFile(savePath, joinedData, 0644); err != nil {
-			logger.ErrorC(ctx, "failed to write file", slog.String("id", id), slog.Any("error", err))
-			return
-		}
-		enrichedData, err := s.GetMeta(ctx, id)
+		defer os.Remove(path)
+		enrichedData, err := s.MetaServiceClient.AddMeta(procCtx, id, path)
 		if err != nil {
 			logger.ErrorC(ctx, "error getting meta", slog.Any("error", err))
 			return
@@ -249,7 +296,6 @@ func (s *Service) DownloadByID(ctx context.Context, id string) error {
 			logger.ErrorC(ctx, "error saving file", slog.Any("error", err))
 			return
 		}
-		s.Cleanup(ctx, id)
 		logger.InfoC(ctx, "download complete", slog.String("id", id))
 	}(id, bod)
 	return nil

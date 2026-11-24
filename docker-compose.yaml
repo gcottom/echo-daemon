@@ -1,12 +1,20 @@
 services:
   echo-daemon-server:
     build:
-      context: ./
+      context: .
       dockerfile: Dockerfile
     ports:
-      - "50999:50999"
-    volumes: 
+      - "127.0.0.1:50999:50999"
+    environment:
+      ECHO_ADDR: 0.0.0.0:50999
+    volumes:
       - ./data:/app/data
       - ./temp:/app/temp
-      - ./settings.yaml:/app/config/config.yaml
-      - "${MUSIC_ROOT}:/app/music:ro"
+      - ./settings.yaml:/app/config/config.yaml:ro
+      - "${MUSIC_ROOT:-./music}:/app/music:ro"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:50999/healthz"]
+      interval: 15s
+      timeout: 3s
+      retries: 6
+      start_period: 30s

@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io/fs"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -27,7 +29,8 @@ import (
 
 func main() {
 	if err := RunServer(); err != nil {
-		panic(err)
+		slog.Error("echo-daemon stopped", "error", err)
+		os.Exit(1)
 	}
 }
 
@@ -39,6 +42,12 @@ func RunServer() error {
 	if err != nil {
 		slog.Error("failed to load config", slog.Any("error", err))
 		return err
+	}
+
+	for _, dir := range []string{cfg.SaveDir, cfg.TempDir} {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return fmt.Errorf("prepare output directory %q: %w", dir, err)
+		}
 	}
 
 	logger.InfoC(ctx, "creating meta service...")
@@ -86,7 +95,7 @@ func RunServer() error {
 		AllowMethods:     []string{"GET", "POST", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Length", "Content-Type", "Accept"},
 		ExposeHeaders:    []string{"Content-Length"},
-		AllowCredentials: true,
+		AllowCredentials: false,
 		MaxAge:           12 * time.Hour,
 	}),
 		logger.Middleware(logger.DefaultLogger),
@@ -94,10 +103,17 @@ func RunServer() error {
 
 	logger.InfoC(ctx, "setting up routes...")
 	handlers.SetupRoutes(ginws, downloaderService)
-	logger.InfoC(ctx, "setup complete, starting server...")
-	logger.InfoC(ctx, "now listening on port 50999!")
-	logger.InfoC(ctx, "echo-daemon ready!")
-	return http.ListenAndServe(":50999", ginws)
+	addr := os.Getenv("ECHO_ADDR")
+	if addr == "" {
+		addr = "127.0.0.1:50999"
+	}
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("listen on %s: %w", addr, err)
+	}
+	logger.InfoC(ctx, "echo-daemon ready!", slog.String("address", listener.Addr().String()))
+	server := &http.Server{Addr: addr, Handler: ginws, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second}
+	return server.Serve(listener)
 }
 
 func initLibraryMap(ctx context.Context, libMap *sync.Map, musicDir string) {
@@ -108,7 +124,7 @@ func initLibraryMap(ctx context.Context, libMap *sync.Map, musicDir string) {
 			logger.ErrorC(ctx, "error walking directory", slog.String("path", path), slog.Any("error", err))
 			return err
 		}
-		if info.IsDir() {
+		if info.IsDir() || !info.Type().IsRegular() {
 			return nil // Skip directories
 		}
 

@@ -5,11 +5,13 @@ import (
 	"context"
 	"fmt"
 	"image"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/gcottom/audiometa/v3"
 	"github.com/gcottom/echodaemon/config"
@@ -31,7 +33,13 @@ func (s *Service) AddMeta(ctx context.Context, id string, filepath string) ([]by
 		logger.ErrorC(ctx, "failed to get best meta", slog.Any("error", err))
 		return nil, err
 	}
-	s.GenreLimiter <- struct{}{}
+	if s.GenreLimiter != nil {
+		select {
+		case s.GenreLimiter <- struct{}{}:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
 	logger.InfoC(ctx, "starting genre identification", slog.String("id", id))
 	def := "Electronic"
 	if config.AppConfig != nil && strings.TrimSpace(config.AppConfig.DefaultGenre) != "" {
@@ -48,7 +56,9 @@ func (s *Service) AddMeta(ctx context.Context, id string, filepath string) ([]by
 		logger.ErrorC(ctx, "genre engine not initialized; using default")
 	}
 	logger.InfoC(ctx, "genre identification complete", slog.String("id", id), slog.String("genre", genre))
-	<-s.GenreLimiter
+	if s.GenreLimiter != nil {
+		<-s.GenreLimiter
+	}
 	trackMeta.Genre = genre
 	out := new(bytes.Buffer)
 
@@ -71,22 +81,14 @@ func (s *Service) AddMeta(ctx context.Context, id string, filepath string) ([]by
 	tag.SetTitle(strings.TrimSpace(trackMeta.Title))
 	tag.SetGenre(strings.TrimSpace(trackMeta.Genre))
 	if trackMeta.CoverArtURL != "" {
-		logger.InfoC(ctx, "fetching cover art", slog.String("id", id), slog.String("url", trackMeta.CoverArtURL))
-		response, err := http.Get(trackMeta.CoverArtURL)
+		img, err := fetchCoverArt(ctx, trackMeta.CoverArtURL)
 		if err != nil {
-			logger.ErrorC(ctx, "failed to get cover art", slog.Any("error", err))
-			return nil, err
+			logger.WarnC(ctx, "cover art unavailable; saving other tags", slog.String("id", id))
+		} else {
+			tag.SetCoverArt(&img)
 		}
-		defer func() {
-			_ = response.Body.Close()
-		}()
-		img, _, err := image.Decode(response.Body)
-		if err != nil {
-			logger.ErrorC(ctx, "failed to decode cover art", slog.Any("error", err))
-			return nil, err
-		}
-		tag.SetCoverArt(&img)
 	}
+
 	if err = tag.Save(out); err != nil {
 		logger.ErrorC(ctx, "failed to save tag", slog.Any("error", err))
 		return nil, err
@@ -95,25 +97,49 @@ func (s *Service) AddMeta(ctx context.Context, id string, filepath string) ([]by
 	return out.Bytes(), nil
 }
 
+func fetchCoverArt(ctx context.Context, rawURL string) (image.Image, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("cover art HTTP status: %d", resp.StatusCode)
+	}
+	img, _, err := image.Decode(io.LimitReader(resp.Body, 8<<20))
+	return img, err
+}
+
 func (s *Service) GetBestMeta(ctx context.Context, id string) (*TrackMeta, error) {
 	res, err := retry.Retry(retry.NewAlgSimpleDefault(), 3, s.GetYTMetaFromID, ctx, id)
 	if err != nil {
-		logger.ErrorC(ctx, "failed to get yt meta", slog.Any("error", err))
-		return nil, err
+		return nil, fmt.Errorf("get YouTube metadata: %w", err)
 	}
 	trackMeta := res[0].(TrackMeta)
 	trackMeta.ID = id
-	res, err = retry.Retry(retry.NewAlgSimpleDefault(), 3, s.GetSpotifyMeta, ctx, trackMeta)
+	return s.enrichWithSpotify(ctx, trackMeta), nil
+}
+
+// Spotify enrichment is optional and must not discard already available metadata.
+func (s *Service) enrichWithSpotify(ctx context.Context, track TrackMeta) *TrackMeta {
+	cfg := s.SpotifyConfig
+	if cfg == nil || strings.TrimSpace(cfg.ClientID) == "" || strings.TrimSpace(cfg.ClientSecret) == "" {
+		return &track
+	}
+	matches, err := s.GetSpotifyMeta(ctx, track)
 	if err != nil {
-		logger.ErrorC(ctx, "failed to get spotify meta", slog.Any("error", err))
-		return nil, err
+		logger.WarnC(ctx, "Spotify enrichment unavailable; using source metadata", slog.Any("error", err))
+		return &track
 	}
-	spotifyMetas := res[0].([]TrackMeta)
-	for _, spotifyMeta := range spotifyMetas {
-		spotifyMeta.ID = id
+	if len(matches) == 0 {
+		return &track
 	}
-	bestMeta := s.GetBestMetaMatch(ctx, trackMeta, spotifyMetas)
-	return &bestMeta, nil
+	best := s.GetBestMetaMatch(ctx, track, matches)
+	return &best
 }
 
 func (s *Service) GetYTMetaFromID(ctx context.Context, id string) (TrackMeta, error) {
@@ -154,6 +180,9 @@ func (s *Service) GetSpotifyMeta(ctx context.Context, trackMeta TrackMeta) ([]Tr
 	}
 
 	trackMetas := make([]TrackMeta, 0)
+	if res == nil || res.Tracks == nil {
+		return trackMetas, nil
+	}
 	for _, track := range res.Tracks.Tracks {
 		resMeta := TrackMeta{}
 		if len(track.Album.Images) > 0 {

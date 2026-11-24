@@ -9,6 +9,7 @@ import (
 type Service struct {
 	MetaServiceClient *meta.Service
 	LibraryMap        *sync.Map
+	saveMu            sync.Mutex
 }
 
 type CaptureStartRequest struct {

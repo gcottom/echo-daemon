@@ -4,21 +4,16 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "build": "webpack --config webpack/webpack.config.js"
+    "build": "webpack --config webpack/webpack.config.js",
+    "test": "node --test test/*.test.cjs"
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
-  "dependencies": {
-    "@types/chrome": "^0.0.270",
-    "browser": "^0.2.6",
-    "chrome": "^0.1.0",
-    "copy-webpack-plugin": "^12.0.2",
-    "fs": "^0.0.1-security",
-    "js-yaml": "^4.1.0"
-  },
+  "license": "MIT",
   "devDependencies": {
+    "@types/chrome": "0.0.270",
     "@types/js-yaml": "^4.0.9",
+    "copy-webpack-plugin": "12.0.2",
     "ts-loader": "^9.5.1",
     "typescript": "^4.9.5",
     "webpack": "^5.98.0",

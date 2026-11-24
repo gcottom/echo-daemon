@@ -14,7 +14,7 @@ import (
 )
 
 func ConvertFile(ctx context.Context, b []byte) ([]byte, error) {
-	logger.InfoC(ctx, "converting file", slog.String("id", ctx.Value("id").(string)))
+	logger.InfoC(ctx, "converting file")
 	// Decode and transcode while regenerating linear audio timestamps to avoid gaps at joins.
 	var args = []string{
 		"-hide_banner", "-loglevel", "error",
@@ -22,7 +22,7 @@ func ConvertFile(ctx context.Context, b []byte) ([]byte, error) {
 		"-i", "pipe:0", // read input from stdin
 		"-vn", "-sn", // drop video/subtitles
 		"-avoid_negative_ts", "make_zero", // normalize timestamps at splice points
-		"-map", "0:a:0?", // select first audio stream if present
+		"-map", "0:a:0", // require an audio stream
 		"-af", "aresample=async=1:first_pts=0", // linearize PTS by sample index; minor resync only
 		"-c:a", "libmp3lame", "-b:a", "256k",
 		"-f", "mp3", "-", // output MP3 to stdout (pipe)
@@ -39,12 +39,18 @@ func ConvertFile(ctx context.Context, b []byte) ([]byte, error) {
 	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		// Include stderr to help diagnose codec/container issues instead of surfacing generic EPIPE
 		errWrap := fmt.Errorf("ffmpeg failed: %w; stderr: %s", err, stderr.String())
 		logger.ErrorC(ctx, "conversion error", slog.Any("error", errWrap))
 		return nil, errWrap
 	}
-	logger.InfoC(ctx, "conversion complete", slog.String("id", ctx.Value("id").(string)))
+	logger.InfoC(ctx, "conversion complete")
+	if stdout.Len() == 0 {
+		return nil, fmt.Errorf("ffmpeg produced no MP3 audio")
+	}
 	return stdout.Bytes(), nil
 }
 

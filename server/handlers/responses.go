@@ -18,11 +18,11 @@ type StatusUpdate struct {
 }
 
 func ResponseFailure(ctx *gin.Context, err error) {
-	ctx.AbortWithError(400, err)
+	ctx.AbortWithStatusJSON(400, Failure{Error: err.Error()})
 }
 
 func ResponseInternalError(ctx *gin.Context, err error) {
-	ctx.AbortWithError(500, err)
+	ctx.AbortWithStatusJSON(500, Failure{Error: "internal server error"})
 }
 
 func ResponseSuccess(ctx *gin.Context, data any) {

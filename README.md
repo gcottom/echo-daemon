@@ -1,65 +1,52 @@
-✨ Echo Daemon  
+# EchoDaemon
 
-A new take on the YouTube Music downloader — intelligent, resilient, and built for research.  
+EchoDaemon is a prototype for organizing audio: a local Go daemon transcodes
+with FFmpeg, enriches tags, and writes finished MP3 files. An optional Chrome
+extension can forward YouTube Music track IDs to the daemon. It does not
+forward cookies, headers, or request bodies. Only use the project with media
+you have permission to process. The upstream playback interface may change;
+local pipeline tests do not establish current streaming-service compatibility.
 
-Echo Daemon rethinks the classic YouTube downloader.  
-Instead of depending on brittle signature-patching logic, it intercepts YouTube Music network requests directly in Chrome, giving it long-term reliability and minimal maintenance.  
+## Start the daemon
 
-⚠️ Disclaimer: This project is a proof of concept, intended for educational and research purposes only.  
-You are responsible for complying with all applicable terms of service and copyright laws.  
+1. Install Docker with Compose.
+2. Run `docker compose up --build` from the repository root. The Compose
+   defaults bind the API to **127.0.0.1:50999** and write completed MP3s to
+   `data/`. The application creates its output and temporary directories.
+3. Check startup with `curl -fsS http://127.0.0.1:50999/healthz`.
+4. Optionally set Spotify credentials in your local `settings.yaml` for
+   enrichment. Do not commit credentials. If Spotify is unset or unavailable,
+   already obtained source metadata is retained.
 
+Set the host environment variable `MUSIC_ROOT` to an existing music library
+if you want duplicate detection against an existing library. Compose mounts it
+read-only; the default is `./music`. Completed output remains in `data/`.
+On Bash hosts, `./start.sh` wraps Compose; optionally set `LOCAL_MUSIC_DIR`
+to an existing destination if you want the wrapper to move new MP3s into
+your library. That optional mode requires `rsync` and does not overwrite
+existing files. The output filesystem must support hard links so incomplete
+writes stay out of the completed directory.
 
-🚀 Features  
-	•	High-Quality Audio Capture from YouTube Music  
-	•	Parses YouTube UMP (Unified Media Player) format responses to extract clean .webm audio  
-	•	Converts WEBM → MP3 automatically via FFmpeg  
-	•	Metadata Enrichment: Queries the YouTube API and Spotify API to fetch artist, title, album, and artwork  
-	•	Genre Classification: Uses ONXX Runtime models to infer track genre  
-	•	Automatic Tagging: Embeds metadata into the final MP3 and saves it to disk  
-	•	Passive or On-Demand Modes: Works both while streaming or through manual track requests  
+## Build the extension
 
+From `chrome/`, run `npm ci`, `npm run build`, and `npm test`.
+In Chrome Extensions, use **Load unpacked** and select `chrome/dist/`.
+Reload an existing installation after updating; this build requests access
+only to the player page and the local daemon.
 
-🧩 Architecture Overview  
-Chrome Extension  ->  Echo Daemon Backend  ->  FFmpeg  ->  YouTube API For Base/Fallback Metadata  ->  Spotify API For Complete Metadata  ->  ONXX Genre Identifier -> ID3 Tagger  ->  Enriched MP3 Audio
+## Verify locally
 
+The server requires Go 1.24 or newer and a C compiler for its ONNX binding.
+From `server/`, run `go build ./...`, `go vet ./...`, and
+`go test -race ./...`. With FFmpeg and its MP3 encoder on PATH, the tests
+convert a synthesized tone, tag it using AudioMeta, check safe file handling,
+and independently decode the completed MP3. The metadata fallback tests do
+not need real Spotify credentials.
 
-⚙️ Setup & Usage  
-	1.	Clone the repo  
-  ```git clone https://github.com/gcottom/echo-daemon.git```  
-  ```cd echo-daemon```  
-  2.	Retrieve Spotify API credentials (clientID, clientSecret) and add them to settings.yaml.  
-  3.	Install Node.js (if not already installed).  
-  4.	Build the Chrome extension:  
-  ```cd chrome```  
-  ```npm install webpack```  
-  ```npm run build```  
-  5.	Load the extension in Chrome → Extensions > Developer Mode > Load Unpacked → select chrome/dist/.  
-  6.	Install and launch Docker.  
-  7.	Update paths in settings.yaml for your environment.  
-  8.	Run the backend:  
-  ```./start.sh```  
-  Wait for the message:  
-  ```echo-daemon ready!```  
-  9.	Stream from YouTube Music — tracks you play are saved to data/ and then moved to local_music_dir.  
-  10.   To download a track or playlist on demand, start the echo-daemon server in a docker container, find the video ID in the URL, and make a GET request to the backend:  
-    ```http://localhost:50999/download/VIDEO_ID_HERE``` or ```http://localhost:50999/download/PLAYLIST_ID_HERE``` 
-You can do this in any browser or using curl or Postman. 
+A native server can use `ECHO_CONFIG` to specify a YAML configuration path
+and defaults to `127.0.0.1:50999`. Keep that listen address local: the
+prototype is not an authenticated public service.
 
-📄 Environment Variables (settings.yaml)  
-  •	save_dir: Directory that the Docker container can write save files to (has to be local to the container)  
-  •	temp_dir: Directory that in progress downloads are written to (has to be local to the container)  
-  •	music_dir: Linked Directory that allows the container to write to the directory specified in local_music_dir (do not change this)  
-  •	local_music_dir: Directory that you want completed downloads to go to (absolute path)  
-  •	local_music_root: The root of your music library (this is used to prevent duplicates appearing in your library, absolute path)  
-  •	local_data_dir: The absolute path of the data directory in the root of this project  
-  •	spotify_client_id: Your Spotify Client ID, retrieved from Spotify Developer Portal  
-  •	spotify_client_secret: Your Spotify Client Secret, retrieved from the Spotify Developer Portal  
+## License
 
-  
-🧠 Notes  
-  •	Keeps consistent performance without frequent patches.  
-  •	All request interception is local; no third-party proxies involved.  
-  •	Fully containerized for portability.  
-
-🪪 License  
-MIT License - see LICENSE for details.   
+MIT. See [LICENSE](LICENSE).

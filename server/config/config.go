@@ -8,18 +8,32 @@ import (
 
 func LoadConfigFromFile(path string) (*Config, error) {
 	if path == "" {
-		path = "./config/config.yaml"
+		path = os.Getenv("ECHO_CONFIG")
+		if path == "" {
+			path = "./config/config.yaml"
+		}
 	}
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
 
+	defer file.Close()
+
 	var config Config
 	dec := yaml.NewDecoder(file)
 	err = dec.Decode(&config)
 	if err != nil {
 		return nil, err
+	}
+	if config.SaveDir == "" {
+		config.SaveDir = "./data"
+	}
+	if config.TempDir == "" {
+		config.TempDir = "./temp"
+	}
+	if config.MusicDir == "" {
+		config.MusicDir = "./music"
 	}
 	AppConfig = &config
 	return &config, nil
