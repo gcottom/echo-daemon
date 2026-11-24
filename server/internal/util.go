@@ -15,15 +15,16 @@ import (
 
 func ConvertFile(ctx context.Context, b []byte) ([]byte, error) {
 	logger.InfoC(ctx, "converting file")
-	// Decode and transcode while regenerating linear audio timestamps to avoid gaps at joins.
+	// Build the output timeline from decoded samples. Timestamp-only holes
+	// at a chunk seam are not audio and must not be filled with silence.
 	var args = []string{
-		"-hide_banner", "-loglevel", "error",
+		"-hide_banner", "-loglevel", "error", "-xerror",
 		"-fflags", "+genpts+igndts", // ignore/don't trust DTS, generate PTS
 		"-i", "pipe:0", // read input from stdin
 		"-vn", "-sn", // drop video/subtitles
 		"-avoid_negative_ts", "make_zero", // normalize timestamps at splice points
 		"-map", "0:a:0", // require an audio stream
-		"-af", "aresample=async=1:first_pts=0", // linearize PTS by sample index; minor resync only
+		"-af", "asetpts=N/SR/TB", // preserve decoded samples, not discontinuous packet timestamps
 		"-c:a", "libmp3lame", "-b:a", "256k",
 		"-f", "mp3", "-", // output MP3 to stdout (pipe)
 	}

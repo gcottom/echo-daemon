@@ -499,5 +499,8 @@ func DownloadWithHeaders(rawURL string, headers map[string]string) ([]byte, erro
 		return nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("unexpected audio response status: %d", resp.StatusCode)
+	}
 	return io.ReadAll(resp.Body)
 }

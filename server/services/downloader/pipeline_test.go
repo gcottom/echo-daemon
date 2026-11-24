@@ -22,7 +22,12 @@ func TestLocalAudioRoundTrip(t *testing.T) {
 	original := config.AppConfig
 	t.Cleanup(func() { config.AppConfig = original })
 	config.AppConfig = cfg
-	audio, err := exec.Command("ffmpeg", "-v", "error", "-f", "lavfi", "-i", "sine=frequency=997:duration=0.3", "-f", "wav", "pipe:1").Output()
+	source := filepath.Join(t.TempDir(), "generated.wav")
+	// FFmpeg needs a seekable destination to finalize the WAV size header.
+	if out, err := exec.Command("ffmpeg", "-nostdin", "-v", "error", "-f", "lavfi", "-i", "sine=frequency=997:duration=0.3", source).CombinedOutput(); err != nil {
+		t.Fatalf("generate WAV fixture: %v: %s", err, out)
+	}
+	audio, err := os.ReadFile(source)
 	if err != nil {
 		t.Fatal(err)
 	}

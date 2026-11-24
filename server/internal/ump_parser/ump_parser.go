@@ -1,6 +1,9 @@
 package ump_parser
 
-import "io"
+import (
+	"fmt"
+	"io"
+)
 
 // UMP part type for media payload (per protos: UMPPartId.MEDIA = 21)
 const umpPartTypeMedia = 21
@@ -60,16 +63,14 @@ func (r *UMPReader) NextPart() (*UMPPart, error) {
 	if r.Pos >= len(r.Buf) {
 		return nil, io.EOF
 	}
+	start := r.Pos
 	typeVal, err := r.readVarInt()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("UMP part type at byte %d: %w", start, io.ErrUnexpectedEOF)
 	}
 	sizeVal, err := r.readVarInt()
-	if err != nil {
-		return nil, err
-	}
-	if r.Pos+sizeVal > len(r.Buf) {
-		return nil, io.EOF
+	if err != nil || sizeVal < 0 || sizeVal > len(r.Buf)-r.Pos {
+		return nil, fmt.Errorf("UMP part length or payload at byte %d: %w", start, io.ErrUnexpectedEOF)
 	}
 	data := r.Buf[r.Pos : r.Pos+sizeVal]
 	r.Pos += sizeVal
@@ -88,10 +89,14 @@ func DecodeUMPFile(input []byte) ([]byte, error) {
 			return nil, err
 		}
 		if part.Type == umpPartTypeMedia {
-			if part.Data[0] == 0x00 {
-				part.Data = part.Data[1:]
+			payload := part.Data
+			if len(payload) == 0 {
+				return nil, fmt.Errorf("empty UMP media part at byte %d", reader.Pos)
 			}
-			mediaData = append(mediaData, part.Data...)
+			if payload[0] == 0x00 {
+				payload = payload[1:]
+			}
+			mediaData = append(mediaData, payload...)
 		}
 	}
 	return mediaData, nil
