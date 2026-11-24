@@ -2,7 +2,7 @@ package genreengine
 
 import (
 	"context"
-	"fmt"
+
 	"sort"
 	"strings"
 )
@@ -26,7 +26,7 @@ func aggregateTagScores(ctx context.Context, lists ...[]string) map[string]float
 		}
 	}
 	// Apply enhancement to redistribute descriptive tags to genres
-	return enhanceGenreScores(ctx, scores)
+	return enhanceGenreScores(ctx, consolidateScores(scores))
 }
 
 // enhanceGenreScores redistributes scores from descriptive tags (instruments, tempo, mood)
@@ -124,7 +124,7 @@ func enhanceGenreScores(ctx context.Context, scores map[string]float64) map[stri
 	}
 
 	// Apply enhancement rules
-	var enhancements_applied []string
+
 	for descriptor, genreList := range enhancements {
 		descriptorScore, hasDescriptor := scores[descriptor]
 		if !hasDescriptor || descriptorScore <= 0 {
@@ -134,20 +134,17 @@ func enhanceGenreScores(ctx context.Context, scores map[string]float64) map[stri
 		// Find which genres from this descriptor's list are present in scores
 		var matchedGenres []string
 		for _, genre := range genreList {
-			if _, hasGenre := scores[genre]; hasGenre {
+			if scores[genre] > 0 && isPrimaryGenre(genre) {
 				matchedGenres = append(matchedGenres, genre)
 			}
 		}
 
 		if len(matchedGenres) > 0 {
-			// Distribute descriptor score to matched genres
+			// Supporting clues may raise direct genre evidence by at most 25 percent.
 			boost := descriptorScore / float64(len(matchedGenres))
 			for _, genre := range matchedGenres {
-				enhanced[genre] += boost
+				enhanced[genre] = min(enhanced[genre]+boost, scores[genre]*1.25)
 			}
-
-			enhancements_applied = append(enhancements_applied,
-				fmt.Sprintf("%s(%.1f)→%s", descriptor, descriptorScore, strings.Join(matchedGenres, "+")))
 
 			// Remove the descriptor score if it's not itself a primary genre
 			if !isPrimaryGenre(descriptor) {
@@ -207,6 +204,7 @@ func consolidateScores(scores map[string]float64) map[string]float64 {
 	aliases := map[string][]string{
 		"rock":       {"classic rock", "hard rock", "alternative rock", "indie rock", "progressive rock"},
 		"electronic": {"electronica", "electro"},
+		"metal":      {"heavy metal"},
 	}
 	out := make(map[string]float64)
 	for k, v := range scores {
@@ -272,17 +270,9 @@ func pickGenre(scores map[string]float64, defaultGenre string) string {
 		}
 		return items[i].v > items[j].v
 	})
-	// If electronic narrowly beats rock, prefer rock when within a small margin
-	if e, eok := scores["electronic"]; eok {
-		if r, rok := scores["rock"]; rok {
-			if r >= 0.9*e { // within 10%
-				return titleCase("rock")
-			}
-		}
-	}
 	// Pick the highest-scoring allowed tag
 	for _, it := range items {
-		if _, ok := allowed[it.k]; ok {
+		if _, ok := allowed[it.k]; ok && isPrimaryGenre(it.k) {
 			return titleCase(it.k)
 		}
 	}

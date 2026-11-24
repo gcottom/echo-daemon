@@ -50,150 +50,133 @@ func decodePCMFloat32(ctx context.Context, filePath string) ([]float32, error) {
 	return res, nil
 }
 
-// hannWindow returns Hann window of given size.
+// The bundled musicnn models expect centered power spectra, periodic Hann
+// windows, and Slaney mel weights with area normalization.
 func hannWindow(n int) []float32 {
 	w := make([]float32, n)
-	if n <= 1 {
-		for i := range w {
+	for i := range w {
+		if n <= 1 {
 			w[i] = 1
+		} else {
+			w[i] = float32(.5 - .5*math.Cos(2*math.Pi*float64(i)/float64(n)))
 		}
-		return w
-	}
-	for i := 0; i < n; i++ {
-		w[i] = float32(0.5 * (1 - math.Cos(2*math.Pi*float64(i)/float64(n-1))))
 	}
 	return w
 }
 
-// stftMagnitude computes magnitude spectrogram (power) using a correct naive DFT.
-// This is not the fastest approach but is acceptable for short clips and small FFTSize.
-func stftMagnitude(x []float32, nFFT, hop int) [][]float32 {
-	win := hannWindow(nFFT)
-	// number of frames
-	frames := 0
-	if len(x) >= nFFT {
-		frames = 1 + (len(x)-nFFT)/hop
+func reflectIndex(i, length int) int {
+	if length <= 1 {
+		return 0
 	}
-	if frames <= 0 {
-		return [][]float32{}
+	period := 2 * (length - 1)
+	i = (i%period + period) % period
+	if i >= length {
+		i = period - i
 	}
-	bins := nFFT/2 + 1
-	S := make([][]float32, frames)
-	for f := 0; f < frames; f++ {
-		start := f * hop
-		// Windowed time-domain samples (real input)
-		xw := make([]float64, nFFT)
-		for i := 0; i < nFFT; i++ {
-			v := 0.0
-			if start+i < len(x) {
-				v = float64(x[start+i])
-			}
-			xw[i] = v * float64(win[i])
-		}
-		// naive DFT for simplicity (O(N^2)); acceptable for nFFT=512
-		reSpec := make([]float64, nFFT)
-		imSpec := make([]float64, nFFT)
-		for k := 0; k < nFFT; k++ {
-			var sumRe, sumIm float64
-			for n := 0; n < nFFT; n++ {
-				angle := -2 * math.Pi * float64(k*n) / float64(nFFT)
-				c := math.Cos(angle)
-				s := math.Sin(angle)
-				// Imaginary part of input is zero
-				sumRe += xw[n] * c
-				sumIm += xw[n] * s
-			}
-			reSpec[k] = sumRe
-			imSpec[k] = sumIm
-		}
-		row := make([]float32, bins)
-		for k := 0; k < bins; k++ {
-			p := reSpec[k]*reSpec[k] + imSpec[k]*imSpec[k]
-			row[k] = float32(p)
-		}
-		S[f] = row
-	}
-	return S
+	return i
 }
 
-// melFilterbank returns a [NumMels][nFFT/2+1] triangular filterbank.
-func melFilterbank(sr, nFFT, nMels int) [][]float32 {
-	fMin := 0.0
-	fMax := float64(sr) / 2.0
-	nBins := nFFT/2 + 1
-	melMin := hzToMel(fMin)
-	melMax := hzToMel(fMax)
-	melPoints := make([]float64, nMels+2)
-	for i := 0; i < nMels+2; i++ {
-		melPoints[i] = melMin + (melMax-melMin)*float64(i)/float64(nMels+1)
+func stftMagnitude(x []float32, nFFT, hop int) [][]float32 {
+	if len(x) == 0 || hop <= 0 || nFFT < 2 || nFFT&(nFFT-1) != 0 {
+		return nil
 	}
-	hzPoints := make([]float64, nMels+2)
-	for i := range hzPoints {
-		hzPoints[i] = melToHz(melPoints[i])
+	win := hannWindow(nFFT)
+	frames := 1 + len(x)/hop
+	spectra := make([][]float32, frames)
+	work := make([]complex128, nFFT)
+	twiddle := make([]complex128, nFFT/2)
+	for k := range twiddle {
+		sn, cs := math.Sincos(-2 * math.Pi * float64(k) / float64(nFFT))
+		twiddle[k] = complex(cs, sn)
 	}
-	bin := make([]int, nMels+2)
-	for i := range bin {
-		bin[i] = int(math.Floor((float64(nFFT) + 1.0) * hzPoints[i] / float64(sr)))
-	}
-	fb := make([][]float32, nMels)
-	for m := 1; m <= nMels; m++ {
-		fb[m-1] = make([]float32, nBins)
-		for k := bin[m-1]; k < bin[m]; k++ {
-			if k >= 0 && k < nBins {
-				fb[m-1][k] = float32(float64(k-bin[m-1]) / float64(max(1, bin[m]-bin[m-1])))
+	for frame := 0; frame < frames; frame++ {
+		start := frame*hop - nFFT/2
+		for i, j := 0, 0; i < nFFT; i++ {
+			work[j] = complex(float64(x[reflectIndex(start+i, len(x))])*float64(win[i]), 0)
+			for bit := nFFT >> 1; bit > 0; bit >>= 1 {
+				j ^= bit
+				if j&bit != 0 {
+					break
+				}
 			}
 		}
-		for k := bin[m]; k < bin[m+1]; k++ {
-			if k >= 0 && k < nBins {
-				fb[m-1][k] = float32(float64(bin[m+1]-k) / float64(max(1, bin[m+1]-bin[m])))
+		for span := 2; span <= nFFT; span *= 2 {
+			half := span / 2
+			for at := 0; at < nFFT; at += span {
+				for k := 0; k < half; k++ {
+					a, b := work[at+k], work[at+k+half]*twiddle[k*(nFFT/span)]
+					work[at+k], work[at+k+half] = a+b, a-b
+				}
 			}
 		}
+		row := make([]float32, nFFT/2+1)
+		for i := range row {
+			re, im := real(work[i]), imag(work[i])
+			row[i] = float32(re*re + im*im)
+		}
+		spectra[frame] = row
 	}
-	return fb
+	return spectra
 }
 
 func hzToMel(hz float64) float64 {
-	return 2595.0 * math.Log10(1.0+hz/700.0)
+	if hz < 1000 {
+		return hz / (200.0 / 3)
+	}
+	return 15 + math.Log(hz/1000)/(math.Log(6.4)/27)
 }
 
 func melToHz(mel float64) float64 {
-	return 700.0 * (math.Pow(10.0, mel/2595.0) - 1.0)
+	if mel < 15 {
+		return mel * (200.0 / 3)
+	}
+	return 1000 * math.Exp((mel-15)*(math.Log(6.4)/27))
 }
 
-func max(a, b int) int {
-	if a > b {
-		return a
+func melFilterbank(sr, nFFT, nMels int) [][]float32 {
+	points := make([]float64, nMels+2)
+	maxMel := hzToMel(float64(sr) / 2)
+	for i := range points {
+		points[i] = melToHz(maxMel * float64(i) / float64(nMels+1))
 	}
-	return b
-}
-
-// melSpectrogram computes mel spectrogram with log scaling matching the Python pipeline.
-// Returns [frames][NumMels].
-func melSpectrogram(x []float32) [][]float32 {
-	S := stftMagnitude(x, FFTSize, FFTHop)
-	if len(S) == 0 {
-		return [][]float32{}
-	}
-	fb := melFilterbank(SampleRate, FFTSize, NumMels)
-	frames := len(S)
-	mel := make([][]float32, frames)
-	for t := 0; t < frames; t++ {
-		mel[t] = make([]float32, NumMels)
-		for m := 0; m < NumMels; m++ {
-			var sum float64
-			for k := 0; k < len(S[t]); k++ {
-				sum += float64(S[t][k]) * float64(fb[m][k])
+	weights := make([][]float32, nMels)
+	for m := range weights {
+		lo, mid, hi := points[m], points[m+1], points[m+2]
+		areaNorm := 2 / (hi - lo)
+		row := make([]float32, nFFT/2+1)
+		for k := range row {
+			hz := float64(k*sr) / float64(nFFT)
+			weight := math.Min((hz-lo)/(mid-lo), (hi-hz)/(hi-mid))
+			if weight > 0 {
+				row[k] = float32(weight * areaNorm)
 			}
-			// log scaling: log10(1 + 10000 * x)
-			mel[t][m] = float32(math.Log10(1.0 + 10000.0*sum))
 		}
+		weights[m] = row
+	}
+	return weights
+}
+
+func melSpectrogram(x []float32) [][]float32 {
+	spectra := stftMagnitude(x, FFTSize, FFTHop)
+	if len(spectra) == 0 {
+		return nil
+	}
+	bank := melFilterbank(SampleRate, FFTSize, NumMels)
+	mel := make([][]float32, len(spectra))
+	for t, s := range spectra {
+		row := make([]float32, NumMels)
+		for m, weights := range bank {
+			var sum float64
+			for k, w := range weights {
+				sum += float64(s[k]) * float64(w)
+			}
+			row[m] = float32(math.Log1p(10000*sum) / math.Ln10)
+		}
+		mel[t] = row
 	}
 	return mel
 }
 
-// threeSecondFrames computes the number of spectrogram frames for 3.0s according to librosa.time_to_frames + 1.
 func threeSecondFrames() int {
-	// librosa.time_to_frames returns int(round(t*sr/hop)), then we add 1
-	// This matches: librosa.time_to_frames(3.0, sr=16000, hop_length=256) + 1 = 187
-	return int(math.Round(3.0*float64(SampleRate)/float64(FFTHop))) + 1
+	return (3*SampleRate-FFTSize/2)/FFTHop + 1
 }

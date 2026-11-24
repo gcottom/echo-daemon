@@ -71,9 +71,9 @@ func NewONNXEngine(ctx context.Context, opt Options) (*ONNXEngine, error) {
 			base := threeSecondFrames()
 			var frameCandidates []int
 			if strings.Contains(strings.ToLower(m), "vgg") {
-				frameCandidates = []int{base - 2, base - 1, base}
+				frameCandidates = []int{base, base - 1, base + 1}
 			} else {
-				frameCandidates = []int{base, base - 1, base - 2}
+				frameCandidates = []int{base, base + 1, base - 1}
 			}
 			tryPairs := [][2]string{{"model/input:0", "model/prob:0"}, {"model_input", "model_prob"}}
 			var sess *onnx.AdvancedSession
@@ -216,6 +216,9 @@ func (e *ONNXEngine) Classify(ctx context.Context, filePath string, topN int) (R
 				}
 			}
 			topTagsWithProbs[i] = fmt.Sprintf("%s(%.3f)", tag, prob)
+		}
+		if os.Getenv("ECHO_ONNX_DEBUG") == "1" {
+			logger.InfoC(ctx, "genre model votes", slog.String("model", name), slog.Any("tags", topTagsWithProbs))
 		}
 		lists = append(lists, topTags)
 	}
