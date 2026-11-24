@@ -32,14 +32,10 @@ RUN set -eux; if [ "$ENABLE_ONNX" != 1 ]; then exit 0; fi; \
 WORKDIR /app/server/cmd
 RUN if [ "$ENABLE_ONNX" = 1 ]; then CGO_ENABLED=1 go build -tags onnx -o server .; else CGO_ENABLED=1 go build -o server .; fi
 
-# ========== Runtime (Debian + FFmpeg + Chromium + ORT) ==========
+# ========== Runtime (Debian + FFmpeg + ORT) ==========
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates curl ffmpeg \
-    chromium \
-    fonts-liberation fonts-noto-color-emoji \
-    libnss3 libasound2 libgbm1 libx11-6 libx11-xcb1 libxcomposite1 \
-    libxdamage1 libxrandr2 libgtk-3-0 libxss1 libxtst6 xdg-utils \
  && rm -rf /var/lib/apt/lists/*
 # ONNX Runtime version (used in runtime stage)
 ARG ENABLE_ONNX=0

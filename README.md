@@ -4,8 +4,11 @@ EchoDaemon is a prototype for organizing audio: a local Go daemon transcodes
 with FFmpeg, enriches tags, and writes finished MP3 files. An optional Chrome
 extension can forward YouTube Music track IDs to the daemon. It does not
 forward cookies, headers, or request bodies. Only use the project with media
-you have permission to process. The upstream playback interface may change;
-local pipeline tests do not establish current streaming-service compatibility.
+you have permission to process. The server uses [youtube-go](https://github.com/gcottom/youtube-go)
+for direct public audio, with a combined audio/video fallback. No headless
+browser, Node, or browser request replay is needed. Formats that require player
+JavaScript, sign-in, or SABR are not supported. Local tests do not establish
+live YouTube compatibility.
 
 ## Start the daemon
 
@@ -36,7 +39,7 @@ only to the player page and the local daemon.
 
 ## Verify locally
 
-The server requires Go 1.24 or newer and a C compiler for its ONNX binding.
+The default server build requires Go 1.24 or newer. ONNX builds also require a C compiler.
 From `server/`, run `go build ./...`, `go vet ./...`, and
 `go test -race ./...`. With FFmpeg and its MP3 encoder on PATH, the tests
 convert a synthesized tone, tag it using AudioMeta, check safe file handling,
@@ -53,10 +56,9 @@ MIT. See [LICENSE](LICENSE).
 
 ### Docker inference mode
 
-The default Compose build uses the heuristic genre engine when the optional
-ONNX Runtime shared library is absent. Docker still builds the Go ONNX
-wrapper with CGO enabled. This avoids a release-asset download in the default
-build and does not change the capture or save pipeline.
+The default Compose build uses the heuristic genre engine without an ONNX Runtime
+release download. The optional ONNX build does not change the download or save
+pipeline.
 
 To opt into native inference, set ENABLE_ONNX=1 before building. ORT_VERSION
 overrides the default 1.22.0; use an official ONNX Runtime release with a

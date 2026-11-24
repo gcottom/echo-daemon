@@ -1,3 +1,5 @@
+//go:build onnx && cgo
+
 package genreengine
 
 import "context"

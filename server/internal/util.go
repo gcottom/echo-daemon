@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"log/slog"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -14,45 +14,54 @@ import (
 )
 
 func ConvertFile(ctx context.Context, b []byte) ([]byte, error) {
-	logger.InfoC(ctx, "converting file")
-	// Build the output timeline from decoded samples. Timestamp-only holes
-	// at a chunk seam are not audio and must not be filled with silence.
-	var args = []string{
-		"-hide_banner", "-loglevel", "error", "-xerror",
-		"-fflags", "+genpts+igndts", // ignore/don't trust DTS, generate PTS
-		"-i", "pipe:0", // read input from stdin
-		"-vn", "-sn", // drop video/subtitles
-		"-avoid_negative_ts", "make_zero", // normalize timestamps at splice points
-		"-map", "0:a:0", // require an audio stream
-		"-af", "asetpts=N/SR/TB", // preserve decoded samples, not discontinuous packet timestamps
-		"-c:a", "libmp3lame", "-b:a", "256k",
-		"-f", "mp3", "-", // output MP3 to stdout (pipe)
+	var out bytes.Buffer
+	if err := convertAudio(ctx, "pipe:0", "-", bytes.NewReader(b), &out); err != nil {
+		return nil, err
 	}
-	// Use CommandContext so cancellation/timeouts propagate to ffmpeg
-	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
-
-	// Pipe input via an in-memory reader to avoid manual StdinPipe writes (prevents EPIPE on early-exit)
-	cmd.Stdin = bytes.NewReader(b)
-
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-		// Include stderr to help diagnose codec/container issues instead of surfacing generic EPIPE
-		errWrap := fmt.Errorf("ffmpeg failed: %w; stderr: %s", err, stderr.String())
-		logger.ErrorC(ctx, "conversion error", slog.Any("error", errWrap))
-		return nil, errWrap
-	}
-	logger.InfoC(ctx, "conversion complete")
-	if stdout.Len() == 0 {
+	if out.Len() == 0 {
 		return nil, fmt.Errorf("ffmpeg produced no MP3 audio")
 	}
-	return stdout.Bytes(), nil
+	return out.Bytes(), nil
+}
+
+// ConvertPath transcodes a seekable input, including MP4s with trailing metadata.
+func ConvertPath(ctx context.Context, input, output string) error {
+	if err := convertAudio(ctx, input, output, nil, nil); err != nil {
+		return err
+	}
+	info, err := os.Stat(output)
+	if err != nil {
+		return fmt.Errorf("check MP3 output: %w", err)
+	}
+	if info.Size() == 0 {
+		return fmt.Errorf("ffmpeg produced no MP3 audio")
+	}
+	return nil
+}
+
+func convertAudio(ctx context.Context, input, output string, reader *bytes.Reader, writer *bytes.Buffer) error {
+	logger.InfoC(ctx, "converting file")
+	// Build the timeline from decoded samples, not packet timestamp gaps.
+	cmd := exec.CommandContext(ctx, "ffmpeg",
+		"-nostdin", "-n", "-hide_banner", "-loglevel", "error", "-xerror",
+		"-fflags", "+genpts+igndts", "-i", input, "-vn", "-sn",
+		"-avoid_negative_ts", "make_zero", "-map", "0:a:0", "-af", "asetpts=N/SR/TB",
+		"-c:a", "libmp3lame", "-b:a", "256k", "-f", "mp3", output)
+	if reader != nil {
+		cmd.Stdin = reader
+	}
+	if writer != nil {
+		cmd.Stdout = writer
+	}
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return fmt.Errorf("ffmpeg failed: %w; stderr: %s", err, stderr.String())
+	}
+	return nil
 }
 
 func SanitizePath(path string) string {

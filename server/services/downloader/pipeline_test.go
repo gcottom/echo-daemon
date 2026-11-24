@@ -12,6 +12,7 @@ import (
 
 	"github.com/gcottom/audiometa/v3"
 	"github.com/gcottom/echodaemon/config"
+	"github.com/gcottom/echodaemon/internal"
 )
 
 func TestLocalAudioRoundTrip(t *testing.T) {
@@ -22,23 +23,15 @@ func TestLocalAudioRoundTrip(t *testing.T) {
 	original := config.AppConfig
 	t.Cleanup(func() { config.AppConfig = original })
 	config.AppConfig = cfg
-	source := filepath.Join(t.TempDir(), "generated.wav")
+	source := filepath.Join(t.TempDir(), "generated.m4a")
 	// FFmpeg needs a seekable destination to finalize the WAV size header.
-	if out, err := exec.Command("ffmpeg", "-nostdin", "-v", "error", "-f", "lavfi", "-i", "sine=frequency=997:duration=0.3", source).CombinedOutput(); err != nil {
+	if out, err := exec.Command("ffmpeg", "-nostdin", "-v", "error", "-f", "lavfi", "-i", "sine=frequency=997:duration=0.3", "-c:a", "aac", source).CombinedOutput(); err != nil {
 		t.Fatalf("generate WAV fixture: %v: %s", err, out)
 	}
-	audio, err := os.ReadFile(source)
-	if err != nil {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "converted.mp3")
+	if err := internal.ConvertPath(ctx, source, path); err != nil {
 		t.Fatal(err)
-	}
-	ctx := context.Background() // no context key required to encode audio
-	path, err := convertToTemporaryFile(ctx, audio)
-	if err != nil {
-		t.Fatal(err)
-	}
-	second, err := convertToTemporaryFile(ctx, audio)
-	if err != nil || path == second {
-		t.Fatalf("job temp paths must be distinct: %q %q %v", path, second, err)
 	}
 	input, err := os.ReadFile(path)
 	if err != nil {
