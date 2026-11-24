@@ -40,4 +40,5 @@ RUN ldconfig
 WORKDIR /app
 COPY --from=builder /echo-server /app/server
 COPY ./models/*.onnx /app/models/
+COPY ./models/LICENSE.musicnn ./models/README.md ./models/SHA256SUMS /app/models/
 ENTRYPOINT ["./server"]

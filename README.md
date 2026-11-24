@@ -67,3 +67,6 @@ binding uses C API 31; ORT_VERSION must match the bundled pin for ONNX builds.
 Python and GPU runtime dependencies are not installed in the final image.
 Startup logs identify which genre engine actually initialized. Check those logs
 as well as /healthz before switching a live deployment.
+
+The bundled ONNX files are conversions of upstream pre-trained models. See
+[model provenance, checksums, and the original musicnn ISC notice](models/README.md).
