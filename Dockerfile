@@ -1,4 +1,4 @@
-# Multi-stage Dockerfile for echo-daemon with ONNX Runtime enabled by default
+# Multi-stage Dockerfile with optional ONNX Runtime (ENABLE_ONNX=1).
 
 # ========== Builder (Go + ONNX Runtime dev) ==========
 FROM golang:latest AS builder
@@ -12,9 +12,10 @@ RUN go mod download
 # Bring in sources
 COPY ./server /app/server
 # ONNX Runtime version (used in this stage)
+ARG ENABLE_ONNX=0
 ARG ORT_VERSION=1.22.0
 # Install ONNX Runtime dev files (headers + libs) matching architecture
-RUN set -eux; \
+RUN set -eux; if [ "$ENABLE_ONNX" != 1 ]; then exit 0; fi; \
     ARCH=$(dpkg --print-architecture); \
     case "$ARCH" in \
       amd64)  ORT_PKG="onnxruntime-linux-x64-${ORT_VERSION}.tgz" ;; \
@@ -27,9 +28,9 @@ RUN set -eux; \
     cp -a /opt/onnxruntime/include/* /usr/local/include/; \
     cp -a /opt/onnxruntime/lib/* /usr/local/lib/; \
     rm -f /tmp/ort.tgz
-# Build server with ONNX tag (CGO enabled)
+# Go ONNX wrapper uses CGO even when the runtime library is not installed.
 WORKDIR /app/server/cmd
-RUN CGO_ENABLED=1 go build -tags onnx -o server .
+RUN if [ "$ENABLE_ONNX" = 1 ]; then CGO_ENABLED=1 go build -tags onnx -o server .; else CGO_ENABLED=1 go build -o server .; fi
 
 # ========== Runtime (Debian + FFmpeg + Chromium + ORT) ==========
 FROM debian:bookworm-slim
@@ -41,9 +42,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxdamage1 libxrandr2 libgtk-3-0 libxss1 libxtst6 xdg-utils \
  && rm -rf /var/lib/apt/lists/*
 # ONNX Runtime version (used in runtime stage)
+ARG ENABLE_ONNX=0
 ARG ORT_VERSION=1.22.0
 # Install ORT runtime libs to match architecture
-RUN set -eux; \
+RUN set -eux; if [ "$ENABLE_ONNX" != 1 ]; then exit 0; fi; \
     ARCH=$(dpkg --print-architecture); \
     case "$ARCH" in \
       amd64)  ORT_PKG="onnxruntime-linux-x64-${ORT_VERSION}.tgz" ;; \
@@ -56,7 +58,7 @@ RUN set -eux; \
     cp -a /opt/onnxruntime/lib/* /usr/local/lib/; \
     ldconfig 2>/dev/null || true; \
     rm -f /tmp/ort.tgz
-ENV LD_LIBRARY_PATH=/usr/local/lib:${LD_LIBRARY_PATH}
+ENV LD_LIBRARY_PATH=/usr/local/lib
 
 WORKDIR /app
 # Copy server binary

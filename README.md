@@ -50,3 +50,15 @@ prototype is not an authenticated public service.
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+### Docker inference mode
+
+The default Compose build uses the heuristic genre engine when the optional
+ONNX Runtime shared library is absent. Docker still builds the Go ONNX
+wrapper with CGO enabled. This avoids a release-asset download in the default
+build and does not change the capture or save pipeline.
+
+To opt into native inference, set ENABLE_ONNX=1 before building. ORT_VERSION
+overrides the default 1.22.0; use an official ONNX Runtime release with a
+published Linux archive for your architecture and compatible C API. Missing
+opt-in artifacts fail the build rather than silently changing modes.

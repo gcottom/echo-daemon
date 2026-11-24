@@ -3,6 +3,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        ENABLE_ONNX: "${ENABLE_ONNX:-0}"
+        ORT_VERSION: "${ORT_VERSION:-1.22.0}"
     ports:
       - "127.0.0.1:50999:50999"
     environment:
