@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gcottom/audiometa/v3"
+	"github.com/gcottom/audiometa/v4"
 	"github.com/gcottom/echodaemon/config"
 	"github.com/gcottom/echodaemon/handlers"
 	"github.com/gcottom/echodaemon/internal/genreengine"

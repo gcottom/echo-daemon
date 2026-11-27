@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gcottom/audiometa/v3"
+	"github.com/gcottom/audiometa/v4"
 	"github.com/gcottom/echodaemon/config"
 	"github.com/gcottom/echodaemon/logger"
 	"github.com/gcottom/retry"
@@ -60,8 +60,10 @@ func (s *Service) AddMeta(ctx context.Context, id string, filepath string) ([]by
 		<-s.GenreLimiter
 	}
 	trackMeta.Genre = genre
-	out := new(bytes.Buffer)
+	return tagTrack(ctx, id, filepath, trackMeta)
+}
 
+func tagTrack(ctx context.Context, id, filepath string, trackMeta *TrackMeta) ([]byte, error) {
 	f, err := os.Open(filepath)
 	if err != nil {
 		logger.ErrorC(ctx, "failed to open file", slog.Any("error", err))
@@ -89,7 +91,8 @@ func (s *Service) AddMeta(ctx context.Context, id string, filepath string) ([]by
 		}
 	}
 
-	if err = tag.Save(out); err != nil {
+	var out bytes.Buffer
+	if err = tag.Save(&out); err != nil {
 		logger.ErrorC(ctx, "failed to save tag", slog.Any("error", err))
 		return nil, err
 	}

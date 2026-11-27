@@ -42,9 +42,10 @@ only to the player page and the local daemon.
 The default server build requires Go 1.24 or newer. ONNX builds also require a C compiler.
 From `server/`, run `go build ./...`, `go vet ./...`, and
 `go test -race ./...`. With FFmpeg and its MP3 encoder on PATH, the tests
-convert a synthesized tone, tag it using AudioMeta, check safe file handling,
-and independently decode the completed MP3. The metadata fallback tests do
-not need real Spotify credentials.
+convert a synthesized tone, tag it using AudioMeta v4, check safe file handling,
+and independently decode the completed MP3. They also round-trip text and
+cover art in generated AAC/M4A and verify that retagging leaves decoded audio
+unchanged. The metadata fallback tests do not need real Spotify credentials.
 
 A native server can use `ECHO_CONFIG` to specify a YAML configuration path
 and defaults to `127.0.0.1:50999`. Keep that listen address local: the

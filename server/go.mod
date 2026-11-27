@@ -3,7 +3,7 @@ module github.com/gcottom/echodaemon
 go 1.24.0
 
 require (
-	github.com/gcottom/audiometa/v3 v3.0.5
+	github.com/gcottom/audiometa/v4 v4.0.0
 	github.com/gcottom/retry v0.1.1
 	github.com/gcottom/youtube-go v0.1.0
 	github.com/gin-contrib/cors v1.7.6
@@ -24,10 +24,11 @@ require (
 	github.com/cloudwego/base64x v0.1.6 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/gabriel-vasile/mimetype v1.4.9 // indirect
-	github.com/gcottom/flacmeta v0.0.7 // indirect
-	github.com/gcottom/mp3meta v0.0.5 // indirect
-	github.com/gcottom/mp4meta v0.0.6 // indirect
-	github.com/gcottom/oggmeta v0.0.9 // indirect
+	github.com/gcottom/audiometa-core/v2 v2.0.0 // indirect
+	github.com/gcottom/flacmeta/v2 v2.0.0 // indirect
+	github.com/gcottom/mp3meta/v2 v2.0.0 // indirect
+	github.com/gcottom/mp4meta/v2 v2.0.0 // indirect
+	github.com/gcottom/oggmeta/v2 v2.0.0 // indirect
 	github.com/gin-contrib/sse v1.1.0 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
